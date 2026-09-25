@@ -1,16 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
 }
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
 
 enum TaskStatus {
   BACKLOG
@@ -19,9 +18,15 @@ enum TaskStatus {
   DONE
 }
 
+/// Derived by the DAG engine. Clients must never directly set this value.
 enum ReadinessState {
   READY
   BLOCKED
+}
+
+enum ProjectRole {
+  OWNER
+  MEMBER
 }
 
 enum SuggestionStatus {
@@ -30,80 +35,213 @@ enum SuggestionStatus {
   REJECTED
 }
 
-model Project {
-  id            Int            @id @default(autoincrement())
-  name          String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+enum TaskEventType {
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_MOVED
+  TASK_DELETED
 
+  TASK_READY
+  TASK_BLOCKED
+
+  DEPENDENCY_ADDED
+  DEPENDENCY_REMOVED
+
+  SCHEDULE_CHANGED
+  GRAPH_UPDATED
+
+  AI_SUGGESTION_CREATED
+  AI_SUGGESTION_ACCEPTED
+  AI_SUGGESTION_REJECTED
+}
+
+// ─────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedProjects       Project[]      @relation("ProjectOwner")
+  memberships         ProjectMember[]
+  taskEvents          TaskEvent[]    @relation("EventActor")
+  suggestionDecisions AiSuggestion[] @relation("SuggestionDecidedBy")
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// Project & Membership
+// ─────────────────────────────────────────────
+
+model Project {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  ownerId     Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner         User            @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members       ProjectMember[]
   tasks         Task[]
   aiSuggestions AiSuggestion[]
+  events        TaskEvent[]
+
+  @@index([ownerId])
+  @@map("projects")
 }
+
+model ProjectMember {
+  id        Int         @id @default(autoincrement())
+  projectId Int
+  userId    Int
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+// ─────────────────────────────────────────────
+// Task
+// ─────────────────────────────────────────────
 
 model Task {
-  id            Int        @id @default(autoincrement())
-  projectId     Int
-  title         String
-  description   String?
-  status        TaskStatus @default(BACKLOG)
-  position      Int
+  id          Int     @id @default(autoincrement())
+  projectId   Int
+  title       String
+  description String? @db.Text
+
+  /// User-controlled workflow state.
+  status TaskStatus @default(BACKLOG)
+
+  /// DAG-engine-controlled dependency state.
+  readiness ReadinessState @default(READY)
+
+  /// Kanban ordering within a status column.
+  position Int @default(0)
 
   // Scheduling
-  plannedStart  DateTime?
-  duration      Int        // duration in days
+  /// User-provided desired/earliest start date.
+  plannedStart DateTime?
+  /// Duration in calendar days.
+  duration Int?
+  /// Computed by the DAG scheduling engine.
   computedStart DateTime?
-  computedEnd   DateTime?
+  /// Computed by the DAG scheduling engine.
+  computedEnd DateTime?
 
-  // Dependency state — derived by the DAG engine, never set by hand
-  readiness     ReadinessState @default(BLOCKED)
+  /// Optimistic concurrency control.
+  version Int @default(1)
 
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  // this task as the PREREQUISITE in a dependency edge
-  dependentEdges    Dependency[] @relation("PrerequisiteTask")
-  // this task as the DEPENDENT in a dependency edge
-  prerequisiteEdges Dependency[] @relation("DependentTask")
+  /// This task is the prerequisite (A → B: A.outgoingEdges contains A → B).
+  outgoingEdges TaskDependency[] @relation("PrerequisiteTask")
+  /// This task is the dependent (A → B: B.incomingEdges contains A → B).
+  incomingEdges TaskDependency[] @relation("DependentTask")
 
-  // AI suggestions where this task is the one being edited
   aiSuggestions        AiSuggestion[] @relation("SuggestionForTask")
-  // AI suggestions where this task was suggested as someone else's prerequisite
   suggestedAsPrereqFor AiSuggestion[] @relation("SuggestionPrereqTask")
 
-  @@index([projectId, status])
+  events TaskEvent[]
+
+  @@index([projectId, status, position])
+  @@index([projectId, readiness])
+  @@index([projectId, updatedAt])
+  @@map("tasks")
 }
 
-model Dependency {
-  id             Int      @id @default(autoincrement())
-  prerequisiteId Int
-  dependentId    Int
-  createdAt      DateTime @default(now())
+// ─────────────────────────────────────────────
+// Task Dependency
+// ─────────────────────────────────────────────
 
-  // prerequisiteId -> dependentId means dependentId depends on prerequisiteId
-  prerequisite Task @relation("PrerequisiteTask", fields: [prerequisiteId], references: [id], onDelete: Cascade)
-  dependent    Task @relation("DependentTask", fields: [dependentId], references: [id], onDelete: Cascade)
+/// Directed edge: prerequisiteTaskId → dependentTaskId means
+/// dependentTask depends on prerequisiteTask.
+/// Example: Backend API → Integration Tests means Integration Tests
+/// cannot become READY until Backend API is DONE.
+model TaskDependency {
+  id                 Int      @id @default(autoincrement())
+  prerequisiteTaskId Int
+  dependentTaskId    Int
+  createdAt          DateTime @default(now())
 
-  @@unique([prerequisiteId, dependentId])
-  @@index([dependentId])
-  @@index([prerequisiteId])
+  prerequisite Task @relation("PrerequisiteTask", fields: [prerequisiteTaskId], references: [id], onDelete: Cascade)
+  dependent    Task @relation("DependentTask", fields: [dependentTaskId], references: [id], onDelete: Cascade)
+
+  /// Prevent duplicate edges.
+  @@unique([prerequisiteTaskId, dependentTaskId])
+  @@index([prerequisiteTaskId])
+  @@index([dependentTaskId])
+  @@map("task_dependencies")
 }
+
+// ─────────────────────────────────────────────
+// AI Dependency Suggestions
+// ─────────────────────────────────────────────
 
 model AiSuggestion {
   id                 Int              @id @default(autoincrement())
   projectId          Int
-  taskId             Int              // the task being created/edited
-  prerequisiteTaskId Int              // the suggested prerequisite
-  reason             String?
+  /// Task for which the dependency is being suggested.
+  taskId             Int
+  /// Existing task suggested as prerequisite.
+  prerequisiteTaskId Int
+  confidence         Float?
+  reason             String?          @db.Text
   status             SuggestionStatus @default(PENDING)
   createdAt          DateTime         @default(now())
   decidedAt          DateTime?
+  decidedById        Int?
 
   project          Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   task             Task    @relation("SuggestionForTask", fields: [taskId], references: [id], onDelete: Cascade)
   prerequisiteTask Task    @relation("SuggestionPrereqTask", fields: [prerequisiteTaskId], references: [id], onDelete: Cascade)
+  decidedBy        User?   @relation("SuggestionDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
 
+  /// Prevent duplicate suggestions for the same pair.
   @@unique([taskId, prerequisiteTaskId])
   @@index([projectId, status])
+  @@index([taskId, status])
+  @@map("ai_suggestions")
+}
+
+// ─────────────────────────────────────────────
+// Audit / Domain Event Log
+// ─────────────────────────────────────────────
+
+model TaskEvent {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  /// Nullable because some project-level events don't belong to one task.
+  taskId    Int?
+  /// Nullable for system-generated events.
+  actorId   Int?
+  type      TaskEventType
+  /// Additional event-specific information, e.g. { "oldStatus": "BACKLOG", "newStatus": "IN_PROGRESS" }
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  actor   User?   @relation("EventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([taskId])
+  @@index([actorId])
+  @@map("task_events")
 }

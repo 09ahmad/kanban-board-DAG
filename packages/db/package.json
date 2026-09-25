@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "exports": {
-    "./client":"./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -18,8 +19,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "7.10.0",
+    "@repo/typescript-config": "workspace:*",
     "dotenv": "^18.0.3",
-    "pg": "^8.23.0",
-    "@repo/typescript-config": "workspace:*"
+    "pg": "^8.23.0"
   }
 }
