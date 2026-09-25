@@ -1,0 +1,109 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskStatus {
+  BACKLOG
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum ReadinessState {
+  READY
+  BLOCKED
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Project {
+  id            Int            @id @default(autoincrement())
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  tasks         Task[]
+  aiSuggestions AiSuggestion[]
+}
+
+model Task {
+  id            Int        @id @default(autoincrement())
+  projectId     Int
+  title         String
+  description   String?
+  status        TaskStatus @default(BACKLOG)
+  position      Int
+
+  // Scheduling
+  plannedStart  DateTime?
+  duration      Int        // duration in days
+  computedStart DateTime?
+  computedEnd   DateTime?
+
+  // Dependency state — derived by the DAG engine, never set by hand
+  readiness     ReadinessState @default(BLOCKED)
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  project       Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // this task as the PREREQUISITE in a dependency edge
+  dependentEdges    Dependency[] @relation("PrerequisiteTask")
+  // this task as the DEPENDENT in a dependency edge
+  prerequisiteEdges Dependency[] @relation("DependentTask")
+
+  // AI suggestions where this task is the one being edited
+  aiSuggestions        AiSuggestion[] @relation("SuggestionForTask")
+  // AI suggestions where this task was suggested as someone else's prerequisite
+  suggestedAsPrereqFor AiSuggestion[] @relation("SuggestionPrereqTask")
+
+  @@index([projectId, status])
+}
+
+model Dependency {
+  id             Int      @id @default(autoincrement())
+  prerequisiteId Int
+  dependentId    Int
+  createdAt      DateTime @default(now())
+
+  // prerequisiteId -> dependentId means dependentId depends on prerequisiteId
+  prerequisite Task @relation("PrerequisiteTask", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+  dependent    Task @relation("DependentTask", fields: [dependentId], references: [id], onDelete: Cascade)
+
+  @@unique([prerequisiteId, dependentId])
+  @@index([dependentId])
+  @@index([prerequisiteId])
+}
+
+model AiSuggestion {
+  id                 Int              @id @default(autoincrement())
+  projectId          Int
+  taskId             Int              // the task being created/edited
+  prerequisiteTaskId Int              // the suggested prerequisite
+  reason             String?
+  status             SuggestionStatus @default(PENDING)
+  createdAt          DateTime         @default(now())
+  decidedAt          DateTime?
+
+  project          Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task             Task    @relation("SuggestionForTask", fields: [taskId], references: [id], onDelete: Cascade)
+  prerequisiteTask Task    @relation("SuggestionPrereqTask", fields: [prerequisiteTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, prerequisiteTaskId])
+  @@index([projectId, status])
+}

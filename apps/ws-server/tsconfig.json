@@ -1,0 +1,15 @@
+{
+  "extends":"@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./src",
+    "paths": {
+      "@repo/db": ["../../packages/db/src"],
+      "@repo/queue": ["../../packages/queue/src"],
+      "@repo/types": ["../../packages/types/src"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
