@@ -1,8 +1,17 @@
 {
   "name": "@repo/types",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@repo/typescript-config": "workspace:*"
