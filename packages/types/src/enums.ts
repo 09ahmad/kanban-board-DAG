@@ -1,0 +1,52 @@
+// ─────────────────────────────────────────────
+// Domain enums (mirror of Prisma enums, importable without @repo/db)
+// ─────────────────────────────────────────────
+
+export const TaskStatus = {
+  BACKLOG: "BACKLOG",
+  IN_PROGRESS: "IN_PROGRESS",
+  REVIEW: "REVIEW",
+  DONE: "DONE",
+} as const;
+
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
+
+export const ReadinessState = {
+  READY: "READY",
+  BLOCKED: "BLOCKED",
+} as const;
+
+export type ReadinessState = (typeof ReadinessState)[keyof typeof ReadinessState];
+
+export const ProjectRole = {
+  OWNER: "OWNER",
+  MEMBER: "MEMBER",
+} as const;
+
+export type ProjectRole = (typeof ProjectRole)[keyof typeof ProjectRole];
+
+export const SuggestionStatus = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+  REJECTED: "REJECTED",
+} as const;
+
+export type SuggestionStatus = (typeof SuggestionStatus)[keyof typeof SuggestionStatus];
+
+export const TaskEventType = {
+  TASK_CREATED: "TASK_CREATED",
+  TASK_UPDATED: "TASK_UPDATED",
+  TASK_MOVED: "TASK_MOVED",
+  TASK_DELETED: "TASK_DELETED",
+  TASK_READY: "TASK_READY",
+  TASK_BLOCKED: "TASK_BLOCKED",
+  DEPENDENCY_ADDED: "DEPENDENCY_ADDED",
+  DEPENDENCY_REMOVED: "DEPENDENCY_REMOVED",
+  SCHEDULE_CHANGED: "SCHEDULE_CHANGED",
+  GRAPH_UPDATED: "GRAPH_UPDATED",
+  AI_SUGGESTION_CREATED: "AI_SUGGESTION_CREATED",
+  AI_SUGGESTION_ACCEPTED: "AI_SUGGESTION_ACCEPTED",
+  AI_SUGGESTION_REJECTED: "AI_SUGGESTION_REJECTED",
+} as const;
+
+export type TaskEventType = (typeof TaskEventType)[keyof typeof TaskEventType];
