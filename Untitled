@@ -1,0 +1,826 @@
+# TaskFlow Pro — Backend Implementation Plan
+
+> **For Claude Code / AI Agent Execution**
+> Read this plan top-to-bottom before writing a single line of code. Work through phases in
+> order. Do not skip ahead. Each phase has a precise set of files to create and a verification
+> step before moving to the next phase. This is the corrected, canonical version — see
+> `CLAUDE.md` at repo root for the binding architecture rules this spec must stay consistent
+> with.
+
+---
+
+## Current Repo State (As of Plan Creation)
+
+### ✅ Already Done
+- `packages/db/prisma/schema.prisma` — complete schema with all models, enums, indexes, and relations
+- `packages/db/prisma.config.ts` — Prisma 7 config with `DATABASE_URL` from env
+- `packages/db/src/client.ts` — singleton `PrismaClient` with `@prisma/adapter-pg`
+- `packages/db/src/index.ts` — re-exports `prisma` and `PrismaClient`
+- `packages/db/package.json` — exports `@repo/db` and `@repo/db/client`
+
+### ⬜ Scaffolding Exists (Empty/Stub Files Only)
+- `apps/server/src/app.ts` — empty
+- `apps/server/src/server.ts` — empty
+- `apps/server/src/services/index.ts` — empty
+- `apps/server/src/routes/index.ts` — empty
+- `apps/server/src/dag-engine/index.ts` — stub (rename to `engine/`)
+- `apps/server/src/controllers/` — empty directory
+- `apps/server/src/middleware/` — empty directory
+- `apps/server/package.json` — needs `scripts`, `dependencies` updated
+- `apps/ws-server/` — scaffolded but unimplemented
+- `packages/queue/` — no `src/` directory, no deps installed
+- `packages/types/` — only a placeholder `index.ts`
+
+### ⬜ Not Created Yet
+- `.env`, `.env.example` at repo root
+- `docker-compose.yml`
+- AI service
+- All unit and integration tests
+
+---
+
+## Phase 0 — Environment & Docker Setup
+
+**Goal**: Redis running locally via Docker; `.env` pointed at the **already-running** Postgres
+container on port 5432.
+
+> **FIX APPLIED**: The original draft of this phase defined its own `postgres` service bound
+> to host port 5432. Since a Postgres container is already running on that port, `docker
+> compose up -d` would fail immediately on a port-binding conflict. This version's
+> `docker-compose.yml` defines **Redis only**. Before writing `.env`, confirm what the
+> already-running Postgres container's actual user/password/db name are — do not guess them.
+> Run `docker ps` to find the container, then `docker exec -it <container> psql -U postgres -c
+> "\l"` (or equivalent) to confirm the database name and credentials, or check whatever
+> compose file / script originally started it.
+
+### Files to Create
+
+**`docker-compose.yml`** (root) — Redis only:
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
+```
+
+**`.env.example`** (root):
+```env
+# Point this at the ALREADY-RUNNING local Postgres container — confirm credentials first,
+# do not assume these values.
+DATABASE_URL=postgresql://<confirmed_user>:<confirmed_password>@localhost:5432/<confirmed_db>
+REDIS_URL=redis://localhost:6379
+PORT=4000
+WS_PORT=4001
+NODE_ENV=development
+JWT_SECRET=change-me-in-production-min-32-chars
+CORS_ORIGIN=http://localhost:3000
+LLM_API_KEY=
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+```
+
+**`.env`** (root, gitignored): Same as above, with the confirmed Postgres credentials and a
+real `JWT_SECRET` (run `openssl rand -hex 32`).
+
+> **Verify**:
+> - `docker compose up -d` — only the `redis` container starts; no port conflict.
+> - `psql "$DATABASE_URL" -c "select 1"` (or a one-line Prisma script) succeeds against the
+>   already-running Postgres instance.
+
+---
+
+## Phase 1 — Shared Types (`packages/types`)
+
+**Goal**: All DTOs, Zod schemas, and shared interfaces used across every service.
+
+### Install
+```bash
+cd packages/types && bun add zod
+```
+
+### Files to Create
+
+**`packages/types/src/enums.ts`**
+Mirror Prisma enums as plain TypeScript constants (importable without `@repo/db`):
+- `TaskStatus`, `ReadinessState`, `ProjectRole`, `SuggestionStatus`, `TaskEventType` (all 13 values)
+
+**`packages/types/src/api.ts`**
+```ts
+export interface ApiSuccess<T> { success: true; data: T; meta?: Record<string, unknown> }
+export interface ApiError { success: false; error: { code: string; message: string } }
+export type ApiResponse<T> = ApiSuccess<T> | ApiError;
+```
+
+**`packages/types/src/schemas/auth.ts`**
+- `RegisterSchema`: `{ name: string min(1), email: email, password: string min(8) }`
+- `LoginSchema`: `{ email: email, password: string min(1) }`
+
+**`packages/types/src/schemas/project.ts`**
+- `CreateProjectSchema`, `UpdateProjectSchema` (partial), `AddMemberSchema`
+
+**`packages/types/src/schemas/task.ts`**
+- `CreateTaskSchema`: title, description?, status?, position?, plannedStart?, duration?
+- **IMPORTANT**: `readiness` MUST NOT appear in any task schema — it is derived only
+- `UpdateTaskSchema`: partial of Create
+- `MoveTaskSchema`: `{ status: TaskStatus, position?: number }`
+
+**`packages/types/src/schemas/dependency.ts`**
+- `CreateDependencySchema`: `{ prerequisiteTaskId: number, dependentTaskId: number }`
+
+**`packages/types/src/schemas/ai.ts`**
+- `AiSuggestionItemSchema`: `{ prerequisiteTaskId: number, confidence: number(0–1), reason?: string }`
+- `AiSuggestionResponseSchema`: `{ suggestions: AiSuggestionItemSchema[] max(10) }`
+
+**`packages/types/src/events.ts`**
+```ts
+export interface WsSubscribeMessage { type: 'PROJECT_SUBSCRIBE'; projectId: number }
+export interface WsEventBroadcast { type: TaskEventType; projectId: number; taskId?: number; payload: Record<string, unknown> }
+export interface RedisDomainEvent extends WsEventBroadcast { timestamp: string }
+```
+
+**`packages/types/src/index.ts`** — re-export everything.
+
+**Update `packages/types/package.json`**: add `exports`, `dependencies: { zod }`.
+
+> **Verify**: `cd packages/types && bunx tsc --noEmit`
+
+---
+
+## Phase 2 — Queue Package (`packages/queue`)
+
+**Goal**: `ioredis` pub/sub only — publisher, subscriber, channel naming. **No job queue.**
+
+> **FIX APPLIED**: The original draft of this phase installed `bullmq` and defined
+> `packages/queue/src/queues/ai.queue.ts` (an `aiQueue` for AI-suggestion jobs). Nothing in
+> any later phase ever called `aiQueue.add()`, and no worker/processor was ever defined to
+> consume it — it was dead code that only added an unused dependency. Per `CLAUDE.md`: AI
+> suggestion generation is a direct, synchronous call inside the request (see Phase 10). This
+> phase now installs `ioredis` only. **Do not install `bullmq`. Do not create a `queues/`
+> directory.**
+
+### Install
+```bash
+cd packages/queue && bun add ioredis
+bun add -d @types/node
+```
+
+### Files to Create
+
+**`packages/queue/src/redis.ts`**
+Two separate `ioredis` connections (not three — no general/worker connection is needed without
+a job queue):
+- `redisPublisher` — for publishing (`publish()`)
+- `redisSubscriber` — for subscribing (cannot publish while subscribed)
+
+Both use `REDIS_URL` env var, `lazyConnect: true`, `maxRetriesPerRequest: null`.
+
+**`packages/queue/src/channels.ts`**
+```ts
+export const projectChannel = (projectId: number) => `taskflow:project:${projectId}:events`;
+```
+
+**`packages/queue/src/publisher.ts`**
+```ts
+export async function publishDomainEvent(event: RedisDomainEvent): Promise<void>
+// Serializes to JSON → redisPublisher.publish(projectChannel(event.projectId), json)
+```
+
+**`packages/queue/src/subscriber.ts`**
+- Manages `listeners: Map<channel, Set<callback>>`
+- `subscribeToProject(projectId, cb)` — subscribes channel if not already; adds cb
+- `unsubscribeFromProject(projectId, cb)` — removes cb; unsubscribes channel if empty
+
+**`packages/queue/src/index.ts`** — re-export everything (`redis.ts`, `channels.ts`,
+`publisher.ts`, `subscriber.ts` only — no `queues/`).
+
+**Update `packages/queue/package.json`**: `exports`, `dependencies: { ioredis }`. Confirm
+`bullmq` is **not** present in `package.json` or `bun.lock` after this phase.
+
+> **Verify**: `cd packages/queue && bunx tsc --noEmit`. `grep -r bullmq packages/queue` returns
+> nothing.
+
+---
+
+## Phase 3 — DAG Engine (`apps/server/src/engine`)
+
+**Goal**: Pure TS graph computation. Zero I/O. This is the correctness core.
+
+> Note: Existing stub `apps/server/src/dag-engine/` should be renamed/replaced by
+> `apps/server/src/engine/`. Per `CLAUDE.md`, nothing under `engine/` may import Express,
+> Prisma, Postgres, Redis, WebSocket, HTTP, or `process.env` — this boundary is what keeps the
+> module testable in isolation.
+
+### Files to Create
+
+**`apps/server/src/engine/types.ts`**
+```ts
+export interface GraphTask {
+  id: number;
+  status: 'BACKLOG' | 'IN_PROGRESS' | 'REVIEW' | 'DONE';
+  readiness: 'READY' | 'BLOCKED';
+  plannedStart?: Date;
+  duration?: number;       // calendar days
+  computedStart?: Date;
+  computedEnd?: Date;
+}
+export interface GraphEdge { prerequisiteTaskId: number; dependentTaskId: number; }
+```
+
+**`apps/server/src/engine/errors.ts`**
+- `CycleDetectedError` (code: `CYCLE_DETECTED`)
+- `SelfDependencyError` (code: `SELF_DEPENDENCY`)
+
+**`apps/server/src/engine/graph.ts`**
+- `buildAdjacency(edges)` → `{ prereqsOf: Map, dependentsOf: Map }`
+
+**`apps/server/src/engine/cycle-detector.ts`**
+- `wouldCreateCycle(edges, prerequisiteId, dependentId): boolean` — DFS from dependent, check if prereq is reachable ($O(V+E)$)
+- `assertNoCycle(edges, prerequisiteId, dependentId): void` — throws `SelfDependencyError` or `CycleDetectedError`
+
+**`apps/server/src/engine/topological-sort.ts`**
+- `topologicalSort(taskIds, edges): number[]` — Kahn's BFS algorithm; deterministic by sorting IDs; throws if cyclic
+
+**`apps/server/src/engine/readiness.ts`**
+- `computeReadiness(tasks, edges): Map<number, 'READY'|'BLOCKED'>` — no prereqs → READY; all prereqs DONE → READY; else BLOCKED
+- `computeDownstreamReadiness(tasks, edges, changedTaskIds): Map<number, ...>` — only affected descendants
+
+**`apps/server/src/engine/scheduler.ts`**
+Critical no-compounding rule: process tasks in topological order, each task recomputes absolute dates from current prereq computedEnd values (never accumulates deltas):
+- `computedStart = max(plannedStart, max(prereqs.computedEnd))`
+- `computedEnd = computedStart + duration days`
+- `computeSchedule(tasks, edges, topoOrder): Map<number, { computedStart, computedEnd }>`
+
+**`apps/server/src/engine/critical-path.ts`**
+- `computeCriticalPath(tasks, edges): { criticalTaskIds, criticalEdges, totalDurationDays }` — longest-path relaxation over topo order
+
+**`apps/server/src/engine/index.ts`** — re-export all.
+
+### Unit Tests (`apps/server/src/engine/__tests__/`)
+
+| File | Required test cases |
+|------|---|
+| `cycle-detection.test.ts` | Self-cycle A→A; Direct A→B, B→A; Indirect A→B→C→A; Valid chain passes |
+| `topological-sort.test.ts` | Linear chain; Diamond; Disconnected nodes; Cyclic throws |
+| `readiness.test.ts` | No deps → READY; One dep not DONE → BLOCKED; All DONE → READY; Multi-prereq: both must be DONE |
+| `scheduler.test.ts` | No prereq uses plannedStart; Chain propagation; Diamond no-compounding (+3d A → D shifts +3 not +6) |
+| `regression.test.ts` | A→B→C all DONE; A reverts to IN_PROGRESS; B and C become BLOCKED but `status` untouched |
+| `convergence.test.ts` | Diamond A→B, A→C, B→D, C→D; A shifts +3d; D shifts +3d exactly once |
+| `critical-path.test.ts` | Linear path; Diamond picks longest branch |
+
+> **Verify**: `bun test apps/server/src/engine` — all green before next phase.
+
+---
+
+## Phase 4 — Server Foundation (`apps/server`)
+
+**Goal**: Express app + middleware + health endpoints + graceful shutdown.
+
+### Install
+```bash
+cd apps/server
+bun add express cors helmet morgan jsonwebtoken bcryptjs dotenv zod
+bun add -d @types/express @types/cors @types/morgan @types/jsonwebtoken @types/bcryptjs @types/node
+```
+
+### Update `apps/server/package.json`
+```json
+{
+  "name": "api",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@repo/db": "workspace:*",
+    "@repo/queue": "workspace:*",
+    "@repo/types": "workspace:*",
+    "express": "^4",
+    "cors": "^2",
+    "helmet": "^8",
+    "morgan": "^1",
+    "jsonwebtoken": "^9",
+    "bcryptjs": "^3",
+    "dotenv": "^18",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@types/express": "^4",
+    "@types/cors": "^2",
+    "@types/morgan": "^1",
+    "@types/jsonwebtoken": "^9",
+    "@types/bcryptjs": "^2",
+    "@types/node": "^26",
+    "@types/bun": "latest",
+    "@repo/typescript-config": "workspace:*"
+  }
+}
+```
+
+Note: no `bullmq` anywhere in this file — `apps/server` only ever calls `publishDomainEvent`
+from `@repo/queue`, it never enqueues jobs.
+
+### Files to Create
+
+**`apps/server/src/config/env.ts`**
+```ts
+// Loads all env vars, validates required ones, exports typed `config` object
+// Throws on missing JWT_SECRET
+export const config = { port, nodeEnv, jwtSecret, corsOrigin, redisUrl, llm: { apiKey, baseUrl, model } }
+```
+
+**`apps/server/src/lib/errors.ts`**
+Domain error hierarchy all extending `AppError`:
+- `AppError(code, message, statusCode)` — base
+- `ValidationError` → 400
+- `AuthenticationError` → 401
+- `AuthorizationError` → 403
+- `NotFoundError(resource)` → 404
+- `ConflictError` → 409
+- `CycleError` → 400 `CYCLE_DETECTED`
+- `SelfDependencyError` → 400 `SELF_DEPENDENCY`
+- `BlockedTaskError` → 400 `TASK_IS_BLOCKED`
+
+**`apps/server/src/middleware/errorHandler.ts`**
+Centralized Express error handler — maps `AppError` → `{ success: false, error: { code, message } }`; masks 500 internals in production.
+
+**`apps/server/src/middleware/validate.ts`**
+```ts
+validate(schema, target?: 'body'|'params'|'query') → Express middleware
+// Uses schema.safeParse; on failure throws ValidationError with joined messages
+```
+
+**`apps/server/src/middleware/authMiddleware.ts`**
+```ts
+// Extracts Bearer token → jwt.verify → attaches req.user = { userId, email }
+// Throws AuthenticationError on missing/invalid token
+declare global { namespace Express { interface Request { user?: { userId: number; email: string } } } }
+```
+
+**`apps/server/src/app.ts`**
+```ts
+// Express app with: helmet, cors, json body parser (1mb limit), morgan logging
+// Routes: GET /health, GET /ready (DB ping), /api/v1 → router
+// Last middleware: errorHandler
+```
+
+**`apps/server/src/server.ts`**
+```ts
+// Starts HTTP server, registers SIGTERM/SIGINT handlers
+// Shutdown: server.close → prisma.$disconnect() → redisPublisher.disconnect() → exit(0)
+```
+
+> **Verify**: `bun run dev` — server starts, `/health` and `/ready` return
+> `{ "success": true, "data": { "status": "ok" } }`.
+
+---
+
+## Phase 5 — Authentication
+
+**Goal**: Register, login, logout, /me with JWT + bcrypt.
+
+### Files to Create
+
+**`apps/server/src/services/auth.service.ts`**
+```ts
+class AuthService {
+  async register(dto: RegisterDto): Promise<{ user: SafeUser; token: string }>
+  // - Check email uniqueness → ConflictError if taken
+  // - bcryptjs.hash(password, 12)
+  // - prisma.user.create(...)
+  // - signToken({ userId, email })
+  // - return omitHash(user) + token
+
+  async login(dto: LoginDto): Promise<{ user: SafeUser; token: string }>
+  // - Find by email → AuthenticationError if not found
+  // - bcrypt.compare → AuthenticationError if mismatch
+  // - signToken + return
+
+  async me(userId: number): Promise<SafeUser>
+  // - prisma.user.findUniqueOrThrow → omit passwordHash
+}
+// Helper: signToken(payload) → string (exp: '7d')
+// Helper: omitHash(user) → Omit<User, 'passwordHash'>
+```
+
+**`apps/server/src/controllers/auth.controller.ts`**
+Thin — delegates entirely to AuthService; 201 for register, 200 for login/me. Controllers
+never call Prisma directly (per `CLAUDE.md` conventions).
+
+**`apps/server/src/routes/auth.routes.ts`**
+```ts
+POST /register  → validate(RegisterSchema) → register
+POST /login     → validate(LoginSchema)    → login
+POST /logout    → authMiddleware           → logout (returns 200, JWT is stateless)
+GET  /me        → authMiddleware           → me
+```
+
+**Wire into `apps/server/src/routes/index.ts`**:
+`router.use('/auth', authRouter)`
+
+> **Verify**:
+> - Register → 201, `{ success: true, data: { user, token } }`, no `passwordHash` in response
+> - Login with wrong password → 401
+> - `GET /me` with token → 200
+> - `GET /me` without token → 401
+
+---
+
+## Phase 6 — Project Service
+
+**Goal**: Project CRUD + membership management with owner authorization.
+
+### Files to Create
+
+**`apps/server/src/services/project.service.ts`**
+```ts
+class ProjectService {
+  async createProject(dto, userId)
+  // - prisma.$transaction: create Project + create ProjectMember(OWNER)
+
+  async getProjects(userId)
+  // - findMany where user is a member
+
+  async getProject(projectId, userId)
+  // - verify membership → NotFoundError/AuthorizationError
+
+  async updateProject(projectId, dto, userId)
+  // - verify OWNER role → update
+
+  async deleteProject(projectId, userId)
+  // - verify OWNER role → delete (cascade handles members, tasks, deps)
+
+  async addMember(projectId, dto, requesterId)
+  // - verify requester is OWNER → upsert ProjectMember
+
+  async removeMember(projectId, targetUserId, requesterId)
+  // - verify requester is OWNER, cannot remove last OWNER → delete
+}
+```
+
+**`apps/server/src/controllers/project.controller.ts`** + **`apps/server/src/routes/project.routes.ts`**
+
+All project routes behind `authMiddleware`.
+
+> **Verify**: Full CRUD with membership and role guard tests.
+
+---
+
+## Phase 7 — Task Service (Core)
+
+**Goal**: Task CRUD + Kanban movement with DAG engine integration.
+
+### Design Decisions
+- On `createTask`: `readiness = READY` (no deps yet); compute schedule if `plannedStart` + `duration` provided.
+- On `moveTask`: **enforce blocked guard before any DB write** — `if (task.readiness === 'BLOCKED' && dto.status === 'IN_PROGRESS') throw BlockedTaskError()`.
+- On `updateTask` with date/duration changes: reload graph → `computeSchedule` → persist descendants.
+- On `deleteTask`: cascade in DB; recompute readiness for former dependents.
+- Publish domain events after every committed transaction, via `publishDomainEvent` — never
+  before the transaction commits (per `CLAUDE.md` event-flow ordering).
+
+### Files to Create
+
+**`apps/server/src/services/task.service.ts`**
+```ts
+class TaskService {
+  async createTask(projectId, dto, userId)
+  async getTasks(projectId, userId)
+  async getTask(taskId, userId)
+  async updateTask(taskId, dto, userId)
+  async moveTask(taskId, dto, userId)    // ← BLOCKED guard here
+  async deleteTask(taskId, userId)
+
+  // Private helpers:
+  private _verifyProjectAccess(projectId, userId): Promise<ProjectMember>
+  private _loadGraph(projectId): Promise<{ tasks: Map<number, GraphTask>, edges: GraphEdge[] }>
+  private _persistGraphUpdates(tx, updates): Promise<void>  // bulk DB update inside transaction
+  private _emit(type, projectId, taskId?, payload): Promise<void>  // calls publishDomainEvent AFTER commit
+}
+```
+
+**`apps/server/src/controllers/task.controller.ts`** + **`apps/server/src/routes/task.routes.ts`**
+
+> **Verify**:
+> - Create task → `readiness: "READY"` in response
+> - Move BLOCKED task to IN_PROGRESS → 400 `TASK_IS_BLOCKED`
+> - Move valid task → event published, WS client receives broadcast
+
+---
+
+## Phase 8 — Dependency Service
+
+**Goal**: Full graph mutation with cycle detection, readiness recalculation, and no-compounding schedule propagation.
+
+### Files to Create
+
+**`apps/server/src/services/dependency.service.ts`**
+```ts
+class DependencyService {
+  async createDependency(projectId, dto, userId):
+  // 1. Verify both taskIds exist in projectId (NotFoundError, also ConflictError for cross-project)
+  // 2. Reject self-dependency
+  // 3. Reject duplicate edge (ConflictError)
+  // 4. assertNoCycle(currentEdges, dto.prerequisiteTaskId, dto.dependentTaskId) → CycleError
+  // 5. prisma.$transaction:
+  //      a. INSERT TaskDependency
+  //      b. computeReadiness(tasks, newEdges) → UPDATE affected tasks
+  //      c. topologicalSort → computeSchedule → UPDATE dates
+  //      d. INSERT TaskEvent(DEPENDENCY_ADDED)
+  //      e. INSERT TaskEvent(SCHEDULE_CHANGED) per affected task if dates changed
+  // 6. AFTER commit: publishDomainEvent(DEPENDENCY_ADDED)
+  // 7. AFTER commit: publishDomainEvent(SCHEDULE_CHANGED) if needed
+  // 8. Return updated graph
+
+  async deleteDependency(dependencyId, userId):
+  // 1. Load dep, verify project access
+  // 2. prisma.$transaction:
+  //      a. DELETE TaskDependency
+  //      b. Recompute readiness + schedule for affected subgraph
+  //      c. INSERT TaskEvent(DEPENDENCY_REMOVED)
+  // 3. AFTER commit: publishDomainEvent(DEPENDENCY_REMOVED)
+
+  async getProjectGraph(projectId, userId): { tasks, dependencies }
+  // Returns full graph state for board rendering (status, readiness, computedStart/End, position)
+
+  async getCriticalPath(projectId, userId)
+  // Calls computeCriticalPath(tasks, edges) engine function
+}
+```
+
+**`apps/server/src/controllers/dependency.controller.ts`** + **`apps/server/src/routes/dependency.routes.ts`**
+
+Routes:
+```
+POST   /projects/:projectId/dependencies
+DELETE /dependencies/:dependencyId
+GET    /projects/:projectId/graph
+GET    /projects/:projectId/critical-path
+```
+
+> **Verify**:
+> - Create dep A→B: B.readiness becomes BLOCKED (A not DONE)
+> - Mark A as DONE: B.readiness becomes READY
+> - Create cycle: 400 `CYCLE_DETECTED`
+> - Diamond graph no-compounding: A→B, A→C, B→D, C→D. Set all plannedStart+duration. Move A forward +3d. Confirm D shifts +3d exactly.
+
+---
+
+## Phase 9 — WebSocket Server (`apps/ws-server`)
+
+**Goal**: Standalone ws server. Redis Pub/Sub → clients. This is the second process referenced
+throughout `CLAUDE.md`'s "Binding architecture decisions" — it never touches Prisma, only Redis
+and WebSocket connections.
+
+### Install
+```bash
+cd apps/ws-server
+bun add ws ioredis dotenv
+bun add -d @types/ws @types/node
+```
+
+### Update `apps/ws-server/package.json`
+Add `scripts.dev`, `dependencies`.
+
+### Files to Create
+
+**`apps/ws-server/src/manager.ts`**
+```ts
+class ConnectionManager {
+  private clients = new Map<WebSocket, Set<number>>() // ws → subscribed projectIds
+
+  subscribe(ws: WebSocket, projectId: number): void
+  unsubscribe(ws: WebSocket, projectId: number): void
+  remove(ws: WebSocket): void  // cleanup on disconnect
+  broadcast(projectId: number, message: string): void  // send to all subscribed clients
+}
+```
+
+**`apps/ws-server/src/handlers.ts`**
+```ts
+function handleClientMessage(ws, rawMessage, manager):
+// Parse JSON → if type === 'PROJECT_SUBSCRIBE' → manager.subscribe(ws, projectId)
+```
+
+**`apps/ws-server/src/index.ts`**
+```ts
+// WebSocketServer({ port: WS_PORT })
+// Own ioredis subscriber connection: psubscribe('taskflow:project:*:events')
+// On pmessage: extract projectId → manager.broadcast(projectId, raw)
+// wss.on('connection'): set up message/close/error handlers
+// Graceful shutdown: wss.close() + redisSub.disconnect()
+```
+
+> **Verify**:
+> - `wscat -c ws://localhost:4001`
+> - Send `{ "type": "PROJECT_SUBSCRIBE", "projectId": 1 }`
+> - Trigger a real REST mutation against `apps/server` → confirm the WS client receives the
+>   event broadcast end-to-end (not just that the process starts — per `CLAUDE.md`'s Phase 9
+>   verification note).
+
+---
+
+## Phase 10 — AI Dependency Suggestions
+
+**Goal**: LLM-backed suggestion pipeline, called synchronously inside the request. Gracefully
+degrades when no key is configured. **No queue involved** — see Phase 2's fix.
+
+### Files to Create
+
+**`apps/server/src/lib/ai-provider.ts`**
+```ts
+interface AiProvider {
+  generateDependencySuggestions(context: { projectName: string; tasks: { id: number; title: string }[] }): Promise<AiSuggestionItem[]>
+}
+
+class OpenAiProvider implements AiProvider {
+  // Builds structured prompt; calls LLM via fetch; parses + validates with AiSuggestionResponseSchema
+  // On failure: logs warning, throws AiProviderError
+}
+
+class NoopAiProvider implements AiProvider {
+  async generateDependencySuggestions() { return []; }
+}
+
+export function createAiProvider(config): AiProvider {
+  return config.llm.apiKey ? new OpenAiProvider(config) : new NoopAiProvider();
+}
+```
+
+**`apps/server/src/services/ai.service.ts`**
+```ts
+class AiService {
+  async generateSuggestions(projectId, taskId, requesterId):
+  // 1. Load project tasks
+  // 2. AWAIT aiProvider.generateDependencySuggestions(...) directly in-request — may return
+  //    [] on failure. This call is synchronous from the caller's perspective; there is no
+  //    job queue, no aiQueue, no worker process for this.
+  // 3. Validate each suggestion:
+  //      - prerequisiteTaskId exists in project (reject unknown IDs)
+  //      - not self-dependency
+  //      - no duplicate AiSuggestion already exists for same (taskId, prerequisiteTaskId)
+  // 4. prisma.aiSuggestion.createMany(valid suggestions, PENDING status)
+  // 5. AFTER commit: emit AI_SUGGESTION_CREATED events via publishDomainEvent
+  // 6. Return suggestions in the HTTP response
+
+  async acceptSuggestion(suggestionId, userId):
+  // 1. Load suggestion (must be PENDING) → NotFoundError/ConflictError
+  // 2. DependencyService.createDependency(...)  ← full validation pipeline, same as a manual edge
+  // 3. prisma.aiSuggestion.update(ACCEPTED, decidedById, decidedAt)
+  // 4. Emit AI_SUGGESTION_ACCEPTED
+
+  async rejectSuggestion(suggestionId, userId):
+  // 1. Load suggestion (must be PENDING)
+  // 2. prisma.aiSuggestion.update(REJECTED)
+  // 3. Emit AI_SUGGESTION_REJECTED
+}
+```
+
+**`apps/server/src/controllers/ai.controller.ts`** + **`apps/server/src/routes/ai.routes.ts`**
+
+Routes:
+```
+POST /projects/:projectId/ai/dependency-suggestions
+POST /ai/suggestions/:suggestionId/accept
+POST /ai/suggestions/:suggestionId/reject
+```
+
+Note the `POST /dependency-suggestions` request will hold the HTTP connection open for the
+duration of the LLM call (typically a few seconds) since it's synchronous — this is a
+deliberate, accepted tradeoff for sprint simplicity, not an oversight. If LLM latency ever
+becomes a real problem, that's the trigger to revisit this, not before.
+
+> **Verify**:
+> - No `LLM_API_KEY`: POST returns `{ success: true, data: { suggestions: [] } }` (graceful degradation)
+> - Accept suggestion: creates real dependency, runs cycle check
+> - Accept cycle-creating suggestion: 400 `CYCLE_DETECTED`
+
+---
+
+## Phase 11 — Audit Events Endpoint
+
+**Goal**: Paginated event log query, with a cursor that actually filters.
+
+> **FIX APPLIED**: The original draft described this endpoint as `orderBy` + `take` only, with
+> no `where` clause using the `before` cursor — meaning it would silently return the same
+> latest page on every call regardless of the cursor passed. Fixed below.
+
+Add to project routes:
+```
+GET /projects/:projectId/events?limit=50&before=<eventId>
+```
+
+**`apps/server/src/services/event.service.ts`**
+```ts
+class EventService {
+  async getEvents(projectId: number, userId: number, limit: number, before?: number) {
+    await this._verifyProjectAccess(projectId, userId);
+
+    return prisma.taskEvent.findMany({
+      where: {
+        projectId,
+        ...(before !== undefined ? { id: { lt: before } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: limit,
+    });
+  }
+}
+```
+
+The `id: { lt: before }` clause is the fix — `before` must actually narrow the `WHERE`, not
+just be accepted and ignored. Order by `id desc` (not `createdAt desc`) for a stable,
+gap-free cursor, since two events can share a `createdAt` timestamp but never share an `id`.
+
+> **Verify**: Create 60+ events in a project. `GET ?limit=20` returns the newest 20 and the
+> `id` of the oldest one returned. `GET ?limit=20&before=<that id>` returns the *next* 20,
+> strictly older — not the same page repeated.
+
+---
+
+## Phase 12 — Tests
+
+### DAG Engine Unit Tests (from Phase 3 — all 7 files)
+
+### Integration Tests (`apps/server/src/__tests__/`)
+
+| Test | Coverage |
+|------|---------|
+| `auth.integration.test.ts` | Register/login/me; `passwordHash` never in response |
+| `task-move.integration.test.ts` | BLOCKED task cannot move to IN_PROGRESS (real DB) |
+| `dependency.integration.test.ts` | Create dep → readiness recalculates → TaskEvent persisted |
+| `diamond.integration.test.ts` | Diamond graph A→B, A→C, B→D, C→D; schedule no-compounding |
+| `events-pagination.integration.test.ts` | `before` cursor returns strictly older, non-repeating pages |
+
+---
+
+## Phase 13 — Final Verification
+
+```bash
+# From repo root
+bun install
+docker compose up -d          # starts Redis only — Postgres is already running separately
+cd packages/db && bunx prisma migrate dev && bunx prisma db seed && cd ../..
+
+bun run check-types   # all workspaces
+bun run lint
+bun test              # all tests
+
+# Manual smoke tests
+curl http://localhost:4000/health
+curl http://localhost:4000/ready
+curl -X POST http://localhost:4000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Alice","email":"alice@test.com","password":"password123"}'
+# set TOKEN=... from response
+curl -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/v1/auth/me
+wscat -c ws://localhost:4001  # send PROJECT_SUBSCRIBE, trigger REST → observe WS broadcast
+```
+
+### Definition of Done Checklist
+
+- [ ] `docker compose up -d` → Redis healthy, no port conflict with the already-running Postgres
+- [ ] `prisma migrate dev` → succeeds against the already-running Postgres with demo seed data
+- [ ] `/health` + `/ready` → `{ "success": true, "data": { "status": "ok" } }`
+- [ ] Register/login/logout/me → no `passwordHash` in any response
+- [ ] Project CRUD + membership → authorization enforced
+- [ ] Task CRUD + position persistence
+- [ ] `PATCH /tasks/:id/move` BLOCKED→IN_PROGRESS → 400 `TASK_IS_BLOCKED`
+- [ ] `POST /dependencies` cycle → 400 `CYCLE_DETECTED`
+- [ ] Diamond graph A→B, A→C, B→D, C→D: A shifts +3d → D shifts +3d (not +6)
+- [ ] Regression: A DONE→IN_PROGRESS → B, C readiness=BLOCKED; `status` columns unchanged
+- [ ] WebSocket receives events after REST mutations end-to-end (no polling needed)
+- [ ] AI suggestions stored as PENDING; accept routes through DependencyService full pipeline; no queue/worker involved anywhere in the AI path
+- [ ] `GET /projects/:id/events?before=<id>` returns a genuinely different, older page — not a repeat
+- [ ] `bun test` → all unit + integration tests green
+- [ ] `bun run check-types` → zero TypeScript errors
+- [ ] `bun run lint` → clean
+- [ ] `grep -r bullmq .` (excluding `node_modules`) → no results anywhere in the repo
+
+---
+
+## Phase Execution Order Summary
+
+```
+Phase 0  →  docker-compose.yml (Redis only), .env, .env.example
+Phase 1  →  packages/types/src/**
+Phase 2  →  packages/queue/src/**  (ioredis pub/sub only, no bullmq)
+Phase 3  →  apps/server/src/engine/** + __tests__/**  [verify: bun test engine]
+Phase 4  →  config, errors, middleware, app.ts, server.ts  [verify: /health works]
+Phase 5  →  auth.service + controller + routes  [verify: register/login/me]
+Phase 6  →  project.service + controller + routes
+Phase 7  →  task.service + controller + routes  [verify: BLOCKED guard]
+Phase 8  →  dependency.service + controller + routes  [verify: cycle + diamond]
+Phase 9  →  apps/ws-server/src/**  [verify: WS broadcast end-to-end]
+Phase 10 →  ai-provider + ai.service + controller + routes  [synchronous, no queue]
+Phase 11 →  events endpoint with real cursor filtering
+Phase 12 →  integration tests
+Phase 13 →  final bun test / check-types / lint / verification
+```

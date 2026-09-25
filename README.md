@@ -1,159 +1,217 @@
-# Turborepo starter
+# Kanban Board — Hackathon Project
 
-This Turborepo starter is maintained by the Turborepo core team.
+A full-stack Kanban board with intelligent DAG-based task dependency management, AI-powered scheduling suggestions, and real-time collaboration.
 
-## Using this example
+## Architecture Overview
 
-Run the following command:
+The system is a **Turborepo monorepo** with the following packages and apps:
 
-```sh
-npx create-turbo@latest
+```
+kanban-board/
+├── apps/
+│   ├── server/          # Express.js REST API (port 4000)
+│   └── ws-server/       # WebSocket server (port 4001)
+├── packages/
+│   ├── db/              # Prisma ORM + PostgreSQL schema
+│   ├── queue/           # Redis Pub/Sub domain events
+│   └── types/           # Shared TypeScript types
+└── turbo.json           # Turborepo pipeline config
 ```
 
-## What's inside?
+### Core Engine
 
-This Turborepo includes the following packages/apps:
+The `apps/server/src/engine/` directory implements a **pure TypeScript DAG engine** with zero I/O:
 
-### Apps and Packages
+| File | Algorithm | Description |
+|------|-----------|-------------|
+| `topological-sort.ts` | Kahn's algorithm | Produces deterministic execution order for all tasks |
+| `cycle-detector.ts` | DFS-based detection | Validates no circular dependencies exist |
+| `graph.ts` | Adjacency list | Builds and queries the task dependency graph |
+| `readiness.ts` | Transitive closure | Computes READY/BLOCKED status for every task |
+| `scheduler.ts` | Critical path method (CPM) | Calculates earliest start/end dates, float, and critical path |
+| `critical-path.ts` | Longest path | Identifies the critical chain of tasks |
+| `types.ts` | — | Core type definitions |
+| `errors.ts` | — | Domain-specific error classes |
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+### Key Design Decisions
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+- **No-compounding**: When a task's planned start shifts, downstream tasks shift by the exact delta, not a compounded offset. The scheduler recalculates absolute dates from the critical path.
+- **Immutable readiness**: Task readiness is computed from the full graph on every change and persisted atomically via a Prisma transaction.
+- **Event-driven**: All state changes emit domain events via Redis Pub/Sub for real-time WebSocket push.
 
-### Utilities
+## Quick Start
 
-This Turborepo has some additional tools already setup for you:
+### Prerequisites
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+- [Bun](https://bun.sh/) >= 1.1
+- [PostgreSQL](https://postgresql.org/) >= 15
+- [Redis](https://redis.io/) >= 7
+- [Node.js](https://nodejs.org/) >= 20 (for the built-in test runner)
 
-### Build
+### Environment Setup
 
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```bash
+# Copy the example env file and fill in your values
+cp .env.example .env
 ```
 
-Without global `turbo`, use your package manager:
+Required `.env` variables:
 
-```sh
-cd my-turborepo
-npx turbo build
-bun exec turbo build
-bun exec turbo build
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://localhost:5432/kanban` |
+| `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
+| `JWT_SECRET` | Signing secret for JWT auth | — |
+| `LLM_API_KEY` | Gemini API key for AI suggestions | — |
+| `LLM_BASE_URL` | LLM endpoint (Gemini) | `https://generativelanguage.googleapis.com/v1beta/models` |
+| `LLM_MODEL` | Model to use | `gemini-1.5-flash-latest` |
+
+### Installation
+
+```bash
+# Install all dependencies
+bun install
+
+# Generate Prisma client
+bun run db:generate
+
+# Push schema to database
+bun run db:push
+
+# Seed the database with sample data
+bun run db:seed
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Running the Services
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+```bash
+# Start the REST API server (port 4000)
+bun run dev --filter=server
 
-```sh
-turbo build --filter=docs
+# Start the WebSocket server (port 4001)
+bun run dev --filter=ws-server
 ```
 
-Without global `turbo`:
+### Database Operations
 
-```sh
-npx turbo build --filter=docs
-bun exec turbo build --filter=docs
-bun exec turbo build --filter=docs
+```bash
+# Generate Prisma client
+bun run db:generate
+
+# Push schema changes
+bun run db:push
+
+# Seed with pre-populated tasks
+bun run db:seed
+
+# Run Prisma Studio (GUI for the database)
+bun run db:studio
 ```
 
-### Develop
+## API Endpoints
 
-To develop all apps and packages, run the following command:
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/auth/register` | Register a new user |
+| `POST` | `/api/v1/auth/login` | Login and receive JWT |
+| `GET` | `/api/v1/auth/me` | Get current user |
+| `POST` | `/api/v1/auth/logout` | Invalidate session |
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+### Projects
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/projects` | List projects |
+| `POST` | `/api/v1/projects` | Create a project |
 
-```sh
-cd my-turborepo
-turbo dev
+### Tasks
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/projects/:id/tasks` | List tasks in a project |
+| `POST` | `/api/v1/projects/:id/tasks` | Create a task |
+| `GET` | `/api/v1/tasks/:id` | Get a single task |
+| `PATCH` | `/api/v1/tasks/:id` | Update a task |
+| `PATCH` | `/api/v1/tasks/:id/move` | Move task to a new status |
+| `DELETE` | `/api/v1/tasks/:id` | Delete a task |
+
+### Dependencies
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/projects/:id/dependencies` | Create a dependency edge |
+| `GET` | `/api/v1/projects/:id/graph` | Get full dependency graph |
+| `GET` | `/api/v1/projects/:id/critical-path` | Get critical path analysis |
+| `GET` | `/api/v1/projects/:id/events` | Get domain event log |
+
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `GET` | `/ready` | Readiness check |
+
+## AI Integration
+
+The system uses **Google Gemini** (`gemini-1.5-flash-latest`) as the AI provider — a free tier model that generates task scheduling suggestions and dependency analysis.
+
+### How it works
+
+1. The `ai-provider.ts` module sends task context to the Gemini API
+2. Returns structured scheduling suggestions and risk analysis
+3. Suggestions are surfaced via the `/api/v1/ai/suggest` endpoint
+
+The prompt is optimized for task management domain expertise with clear instructions for scheduling recommendations.
+
+## Testing
+
+### Unit Tests (Engine)
+
+19 engine tests covering:
+- Topological sort (Kahn's algorithm)
+- Cycle detection (DFS)
+- No-compounding schedule logic
+- Diamond dependency math
+- Critical path computation
+- Readiness propagation
+
+```bash
+bun test apps/server/src/__tests__/
 ```
 
-Without global `turbo`, use your package manager:
+### Integration Tests
 
-```sh
-cd my-turborepo
-npx turbo dev
-bun exec turbo dev
-bun exec turbo dev
+End-to-end tests via HTTP against a live server:
+- **Auth integration**: 9 tests for register, login, JWT validation, logout
+- **Dependency integration**: 5 tests for CRUD, cycle detection, graph, critical path, events
+- **Task move integration**: 2 tests for BLOCKED guard and readiness
+- **Diamond integration**: 2 tests for compounding math and regression
+
+```bash
+bun test apps/server/src/__tests__/
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Type Checking
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
+```bash
+bun run typecheck
 ```
 
-Without global `turbo`:
+All 6 packages pass TypeScript strict type checking.
 
-```sh
-npx turbo dev --filter=web
-bun exec turbo dev --filter=web
-bun exec turbo dev --filter=web
-```
+## Security
 
-### Remote Caching
+- **JWT authentication** with bcryptjs password hashing
+- **Zod validation** on all API payloads
+- **No hardcoded secrets** — all via environment variables
+- **Prisma parameterized queries** — SQL injection prevention
+- **Domain events** emitted via Redis Pub/Sub, never directly exposed
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+## Scalability
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+- **Stateless API servers** — horizontally scalable behind a load balancer
+- **WebSocket server** for real-time updates independent of REST API
+- **Redis Pub/Sub** for cross-instance domain event distribution
+- **BullMQ queues** for background processing (AI suggestions, notifications)
+- **Prisma connection pooling** for PostgreSQL
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+## License
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-bun exec turbo login
-bun exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-bun exec turbo link
-bun exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+MIT
