@@ -3,7 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "baseUrl": "./src",
     "paths": {
       "@repo/db": ["../../packages/db/src"],
       "@repo/queue": ["../../packages/queue/src"],
