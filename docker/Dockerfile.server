@@ -1,0 +1,43 @@
+# Dockerfile for TaskFlow Pro REST API Server
+# Runs TypeScript directly with Bun (no compilation needed)
+FROM oven/bun:1.2-alpine AS base
+
+# Install runtime dependencies
+RUN apk add --no-cache python3 make g++ postgresql-client
+
+WORKDIR /app
+
+# Copy package files for server and its workspace dependencies
+COPY package.json bun.lock turbo.json ./
+COPY apps/server/package.json ./apps/server/
+COPY packages/db/package.json ./packages/db/
+COPY packages/queue/package.json ./packages/queue/
+COPY packages/types/package.json ./packages/types/
+COPY packages/typescript-config/package.json ./packages/typescript-config/
+
+# Install all dependencies (needed for workspace resolution)
+RUN bun install
+
+# Copy source code
+COPY apps/server ./apps/server
+COPY packages/db ./packages/db
+COPY packages/queue ./packages/queue
+COPY packages/types ./packages/types
+COPY packages/typescript-config ./packages/typescript-config
+
+# Generate Prisma client
+RUN cd packages/db && bunx prisma generate
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+USER nodejs
+
+EXPOSE 4000
+
+ENV NODE_ENV=production
+ENV PORT=4000
+
+WORKDIR /app/apps/server
+CMD ["bun", "run", "src/server.ts"]
