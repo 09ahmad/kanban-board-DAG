@@ -62,9 +62,9 @@ Required `.env` variables:
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://localhost:5432/kanban` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
 | `JWT_SECRET` | Signing secret for JWT auth | — |
-| `LLM_API_KEY` | Gemini API key for AI suggestions | — |
-| `LLM_BASE_URL` | LLM endpoint (Gemini) | `https://generativelanguage.googleapis.com/v1beta/models` |
-| `LLM_MODEL` | Model to use | `gemini-1.5-flash-latest` |
+| `LLM_API_KEY` | OpenAI API key for AI suggestions | — |
+| `LLM_BASE_URL` | LLM endpoint (OpenAI) | `https://api.openai.com/v1` |
+| `LLM_MODEL` | Model to use | `gpt-4o-mini` |
 
 ### Installation
 
@@ -150,11 +150,11 @@ bun run db:studio
 
 ## AI Integration
 
-The system uses **Google Gemini** (`gemini-1.5-flash-latest`) as the AI provider — a free tier model that generates task scheduling suggestions and dependency analysis.
+The system uses **OpenAI** (`gpt-4o-mini`) as the AI provider — a model that generates task scheduling suggestions and dependency analysis.
 
 ### How it works
 
-1. The `ai-provider.ts` module sends task context to the Gemini API
+1. The `ai-provider.ts` module sends task context to the OpenAI API
 2. Returns structured scheduling suggestions and risk analysis
 3. Suggestions are surfaced via the `/api/v1/ai/suggest` endpoint
 

@@ -18,10 +18,10 @@ export interface AiProvider {
 }
 
 /**
- * Gemini AI Provider - uses Google's Gemini model via the Google Generative AI API.
+ * OpenAI AI Provider - uses OpenAI's GPT models via the Chat Completions API.
  * Falls back gracefully when no API key is configured (returns empty suggestions).
  */
-class GeminiAiProvider implements AiProvider {
+class OpenAiProvider implements AiProvider {
   async generateDependencySuggestions(context: {
     projectName: string;
     taskId: number;
@@ -59,55 +59,51 @@ Output format (strict schema):
 }
 Max 10 suggestions. Focus on strong logical dependencies, not weak ones.`;
 
-    const url = `${config.llm.baseUrl}/models/${config.llm.model}:generateContent?key=${apiKey}`;
+    const url = `${config.llm.baseUrl}/chat/completions`;
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        contents: [{
+        model: config.llm.model,
+        messages: [{
           role: "user",
-          parts: [{ text: prompt }]
+          content: prompt
         }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1024,
-        }
+        temperature: 0.7,
+        max_tokens: 1024,
+        response_format: { type: "json_object" }
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.warn(`Gemini API request failed: ${response.status} - ${errorText}`);
+      console.warn(`OpenAI API request failed: ${response.status} - ${errorText}`);
       return [];
     }
 
     const result = await response.json();
-    const candidates = result?.candidates?.[0]?.content?.parts;
+    const text = result.choices?.[0]?.message?.content;
 
-    if (!candidates || candidates.length === 0) {
-      console.warn("Gemini returned no candidates");
+    if (!text) {
+      console.warn("OpenAI returned no content");
       return [];
     }
-
-    const text = candidates
-      .map((p: any) => p.text)
-      .filter((t: string | null | undefined) => t)
-      .join(" ");
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      console.warn("Gemini returned invalid JSON");
+      console.warn("OpenAI returned invalid JSON");
       return [];
     }
 
     const validated = AiSuggestionResponseSchema.safeParse(parsed);
     if (!validated.success) {
-      console.warn("Gemini payload failed validation");
+      console.warn("OpenAI payload failed validation");
       return [];
     }
 
@@ -123,6 +119,6 @@ class NoopAiProvider implements AiProvider {
 
 export function createAiProvider(): AiProvider {
   return config.llm.apiKey
-    ? new GeminiAiProvider()
+    ? new OpenAiProvider()
     : new NoopAiProvider();
 }
