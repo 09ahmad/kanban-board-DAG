@@ -3,6 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "allowImportingTsExtensions": true,
     "paths": {
       "@repo/db": ["../../packages/db/src"],
       "@repo/queue": ["../../packages/queue/src"],

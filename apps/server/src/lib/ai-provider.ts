@@ -117,7 +117,17 @@ class NoopAiProvider implements AiProvider {
   }
 }
 
+let aiProviderWarned = false;
+
 export function createAiProvider(): AiProvider {
+  if (!config.llm.apiKey && !aiProviderWarned) {
+    console.warn(
+      "⚠️  AI Service: LLM_API_KEY not configured. AI dependency suggestions will be disabled.\n" +
+      "   Add LLM_API_KEY to .env to enable AI features (e.g., OpenAI API key).\n" +
+      "   Example: LLM_API_KEY=sk-your-key-here"
+    );
+    aiProviderWarned = true;
+  }
   return config.llm.apiKey
     ? new OpenAiProvider()
     : new NoopAiProvider();

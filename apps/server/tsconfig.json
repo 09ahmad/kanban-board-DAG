@@ -4,6 +4,8 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "types": ["bun", "node"],
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "paths": {
       "@repo/db": ["../../packages/db/src"],
       "@repo/queue": ["../../packages/queue/src"],
