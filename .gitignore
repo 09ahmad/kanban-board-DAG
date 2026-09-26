@@ -39,3 +39,5 @@ yarn-error.log*
 *.pem
 
 .remember
+EVAL_CRITERIA.md
+IMPLEMENTATION.md
