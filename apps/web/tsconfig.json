@@ -6,7 +6,12 @@
         "name": "next"
       }
     ],
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@/*": ["./*"],
+      "@repo/types": ["./../../packages/types/src/index.ts"]
+    }
   },
   "include": [
     "**/*.ts",
