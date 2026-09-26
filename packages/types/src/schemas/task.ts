@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TaskStatus } from "../enums.js";
+import { TaskStatus } from "../enums.ts";
 
 const taskStatusValues = [
   TaskStatus.BACKLOG,

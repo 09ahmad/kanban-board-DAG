@@ -1,4 +1,4 @@
-import type { TaskEventType } from "./enums.js";
+import type { TaskEventType } from "./enums.ts";
 
 export interface WsSubscribeMessage {
   type: "PROJECT_SUBSCRIBE";

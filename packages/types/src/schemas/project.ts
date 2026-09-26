@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProjectRole } from "../enums.js";
+import { ProjectRole } from "../enums.ts";
 
 export const CreateProjectSchema = z.object({
   name: z.string().min(1),
