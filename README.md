@@ -1,146 +1,235 @@
-# Kanban Board — Hackathon Project
+# TaskFlow Pro
 
-A full-stack Kanban board with intelligent DAG-based task dependency management, AI-powered scheduling suggestions, and real-time collaboration.
+A Kanban project management web app for engineering/product teams who plan work as dependency chains (e.g. integration tests can't start until backend API is done). Responsive, desktop-first but usable on tablet/mobile.
 
-## Architecture Overview
+## Problem Statement
 
-The system is a **Turborepo monorepo** with the following packages and apps:
+Engineering teams plan work as dependency chains — "Task B cannot start until Task A is done." Traditional Kanban boards treat tasks as independent items. TaskFlow Pro makes dependencies first-class citizens:
 
+- **Workflow state** (`status`): BACKLOG → IN_PROGRESS → REVIEW → DONE (user moves cards)
+- **Dependency state** (`readiness`): READY / BLOCKED (computed by the DAG engine, never manually set)
+- **Diamond-dependency math**: If task A shifts by +3 days, downstream task D moves by +3 days **once**, never +6
+- **Regression handling**: If A moves back from DONE to IN_PROGRESS, downstream tasks revert to BLOCKED without altering their workflow status
+
+## Screens
+
+### 1. Auth — Single screen, toggle between Log in / Create account
+- Login: email, password
+- Register: name, email, password
+- One primary submit button labeled to match active mode
+- Utility login screen — no marketing copy, no hero image
+
+### 2. Kanban Board — 4 columns (Backlog, In Progress, Review, Done)
+- Column headers show name + task count
+- Cards show: title, legible Ready/Blocked indicator (core product state), compact dependency-load signal ("waiting on 2" / "blocking 3") — only when relevant
+- Blocked cards look visibly non-interactive for moving into In Progress
+- Top bar: project name, member-avatar cluster, link to dependency graph view
+- Drag-and-drop via @dnd-kit (column drop calls `PATCH /tasks/:id/move`)
+
+### 3. Task Detail — Two columns
+- **Left**: title, description, status, planned start date, duration, "Waiting on" (prerequisites) and "Blocking" (dependents) lists with task title + status, add-dependency search control
+- **Right**: computed schedule (computed start/end, visually marked as system-calculated), AI suggestions panel — suggested prerequisites with reason and Accept/Reject per suggestion
+
+### 4. Dependency Graph — Full-canvas node-link diagram
+- Nodes = tasks, colored by Ready/Blocked distinction
+- Directional edges, layout reads left-to-right in dependency order
+- One connected chain marked as "critical path" (heavier line weight), distinguishable at a glance
+- Back link to the board
+
+## Screenshots
+
+| Screen | Screenshot |
+|--------|------------|
+| Kanban Board | ![Kanban Board](/home/sk-ahmad/Pictures/Screenshots/Screenshot%20from%202026-09-26%2019-41-57.png) |
+| Task Detail / Dependency Graph | ![Task Detail](/home/sk-ahmad/Pictures/Screenshots/Screenshot%20from%202026-09-26%2019-42-13.png) |
+
+> **Note**: For the screenshots to render in the GitHub/GitLab repository view, copy the images into the repo (e.g., `docs/screenshots/`) and update the paths above to relative references like `docs/screenshots/board.png`.
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Next.js   │────▶│   Express    │────▶│  PostgreSQL  │
+│   (port 3000)    │  (port 4000)  │     │  (Prisma 7)  │
+└─────────────┘     └──────┬───────┘     └──────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │    Redis     │
+                    │  (Pub/Sub)   │
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐
+                    │  WebSocket   │
+                    │  (port 4001) │
+                    └──────────────┘
+```
+
+**Monorepo (Turborepo):**
 ```
 kanban-board/
 ├── apps/
-│   ├── server/          # Express.js REST API (port 4000)
-│   └── ws-server/       # WebSocket server (port 4001)
+│   ├── web/              # Next.js 16 + React 19 App Router
+│   ├── server/           # Express + TS REST API + DAG Engine (port 4000)
+│   └── ws-server/        # ws package WebSocket server (port 4001)
 ├── packages/
-│   ├── db/              # Prisma ORM + PostgreSQL schema
-│   ├── queue/           # Redis Pub/Sub domain events
-│   └── types/           # Shared TypeScript types
-└── turbo.json           # Turborepo pipeline config
+│   ├── db/               # Prisma 7 + PostgreSQL (pg adapter)
+│   ├── queue/            # BullMQ + ioredis Redis Pub/Sub
+│   └── types/            # Shared DTOs + Zod schemas
+└── turbo.json
 ```
 
-### Core Engine
-
-The `apps/server/src/engine/` directory implements a **pure TypeScript DAG engine** with zero I/O:
-
+### Core Engine (`apps/server/src/engine/`)
+Pure TypeScript DAG engine with zero I/O:
 | File | Algorithm | Description |
 |------|-----------|-------------|
-| `topological-sort.ts` | Kahn's algorithm | Produces deterministic execution order for all tasks |
-| `cycle-detector.ts` | DFS-based detection | Validates no circular dependencies exist |
-| `graph.ts` | Adjacency list | Builds and queries the task dependency graph |
-| `readiness.ts` | Transitive closure | Computes READY/BLOCKED status for every task |
-| `scheduler.ts` | Critical path method (CPM) | Calculates earliest start/end dates, float, and critical path |
-| `critical-path.ts` | Longest path | Identifies the critical chain of tasks |
-| `types.ts` | — | Core type definitions |
-| `errors.ts` | — | Domain-specific error classes |
+| `topological-sort.ts` | Kahn's algorithm | Deterministic execution order |
+| `cycle-detector.ts` | DFS-based | Validates no circular dependencies |
+| `graph.ts` | Adjacency list | Builds and queries dependency graph |
+| `readiness.ts` | Transitive closure | Computes READY/BLOCKED per task |
+| `scheduler.ts` | CPM | Calculates earliest start/end, float, critical path |
+| `critical-path.ts` | Longest path | Identifies critical chain of tasks |
 
 ### Key Design Decisions
-
-- **No-compounding**: When a task's planned start shifts, downstream tasks shift by the exact delta, not a compounded offset. The scheduler recalculates absolute dates from the critical path.
-- **Immutable readiness**: Task readiness is computed from the full graph on every change and persisted atomically via a Prisma transaction.
-- **Event-driven**: All state changes emit domain events via Redis Pub/Sub for real-time WebSocket push.
+- **No-compounding**: Downstream shifts by exact delta, never compounded
+- **Immutable readiness**: Computed from full graph on every change, persisted atomically
+- **Event-driven**: All state changes emit domain events via Redis Pub/Sub for real-time WebSocket push
 
 ## Quick Start
 
 ### Prerequisites
+- [Bun](https://bun.sh/) >= 1.2
+- [Docker](https://docker.com/) (for PostgreSQL & Redis)
 
-- [Bun](https://bun.sh/) >= 1.1
-- [PostgreSQL](https://postgresql.org/) >= 15
-- [Redis](https://redis.io/) >= 7
-- [Node.js](https://nodejs.org/) >= 20 (for the built-in test runner)
-
-### Environment Setup
+### Option 1: Docker (Production-like)
 
 ```bash
-# Copy the example env file and fill in your values
-cp .env.example .env
+# 1. Configure environment
+cp .env.production.example .env
+# Edit .env: set JWT_SECRET, POSTGRES_PASSWORD, etc.
+
+# 2. Build and start all services
+docker compose build
+docker compose up -d
+
+# 3. Verify
+docker compose ps
 ```
+
+**Services exposed:**
+| Service | Port |
+|---------|------|
+| Web (Next.js) | 3000 |
+| REST API (Express) | 4000 |
+| WebSocket (`ws`) | 4001 |
+| PostgreSQL | 5432 |
+| Redis | 6379 |
+
+### Option 2: Bun Scripts (Development)
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your values (required: DATABASE_URL, REDIS_URL, JWT_SECRET)
+
+# 3. Start databases
+docker compose up -d postgres redis
+
+# 4. Complete database setup (generate + push + seed)
+bun run setup:db
+
+# 5. Build all packages
+bun run build
+
+# 6. Start all services with hot reload
+bun run dev
+```
+
+**Individual service commands:**
+```bash
+# Start only REST API server (port 4000)
+bun run start:server
+
+# Start only WebSocket server (port 4001)
+bun run start:ws
+
+# Start only Frontend (port 3000) - run in separate terminal
+bun run start:web
+```
+
+## Environment Variables
 
 Required `.env` variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://localhost:5432/kanban` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://taskflow:taskflow@localhost:5432/taskflow` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
-| `JWT_SECRET` | Signing secret for JWT auth | — |
-| `LLM_API_KEY` | OpenAI API key for AI suggestions | — |
+| `JWT_SECRET` | Signing secret for JWT auth (min 32 chars) | — |
+| `PORT` | REST API server port | `4000` |
+| `WS_PORT` | WebSocket server port | `4001` |
+| `NODE_ENV` | Node environment | `development` |
+| `CORS_ORIGIN` | CORS origin for frontend | `http://localhost:3000` |
+| `LLM_API_KEY` | **Optional** - OpenAI API key for AI suggestions | — |
 | `LLM_BASE_URL` | LLM endpoint (OpenAI) | `https://api.openai.com/v1` |
 | `LLM_MODEL` | Model to use | `gpt-4o-mini` |
 
-### Installation
+> **AI Service**: AI-powered dependency suggestions are **optional**. If `LLM_API_KEY` is not set, the system works normally but AI suggestions are disabled with a warning.
 
-```bash
-# Install all dependencies
-bun install
+## API Reference
 
-# Generate Prisma client
-bun run db:generate
+Base URL: `http://localhost:4000/api/v1`
 
-# Push schema to database
-bun run db:push
-
-# Seed the database with sample data
-bun run db:seed
-```
-
-### Running the Services
-
-```bash
-# Start the REST API server (port 4000)
-bun run dev --filter=server
-
-# Start the WebSocket server (port 4001)
-bun run dev --filter=ws-server
-```
-
-### Database Operations
-
-```bash
-# Generate Prisma client
-bun run db:generate
-
-# Push schema changes
-bun run db:push
-
-# Seed with pre-populated tasks
-bun run db:seed
-
-# Run Prisma Studio (GUI for the database)
-bun run db:studio
-```
-
-## API Endpoints
+All responses follow uniform envelope:
+- Success: `{ "success": true, "data": ... }`
+- Error: `{ "success": false, "error": { "code": "...", "message": "..." } }`
 
 ### Authentication
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/auth/register` | Register a new user |
-| `POST` | `/api/v1/auth/login` | Login and receive JWT |
-| `GET` | `/api/v1/auth/me` | Get current user |
-| `POST` | `/api/v1/auth/logout` | Invalidate session |
+| `POST` | `/auth/register` | Register a new user |
+| `POST` | `/auth/login` | Login and receive JWT |
+| `GET` | `/auth/me` | Get current user |
+| `POST` | `/auth/logout` | Invalidate session |
 
 ### Projects
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/projects` | List projects |
-| `POST` | `/api/v1/projects` | Create a project |
+| `GET` | `/projects` | List projects |
+| `POST` | `/projects` | Create a project |
+| `GET` | `/projects/:id` | Get project details |
+| `PATCH` | `/projects/:id` | Update project |
+| `DELETE` | `/projects/:id` | Delete project |
+| `POST` | `/projects/:id/members` | Add member |
+| `DELETE` | `/projects/:id/members/:userId` | Remove member |
 
 ### Tasks
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/v1/projects/:id/tasks` | List tasks in a project |
-| `POST` | `/api/v1/projects/:id/tasks` | Create a task |
-| `GET` | `/api/v1/tasks/:id` | Get a single task |
-| `PATCH` | `/api/v1/tasks/:id` | Update a task |
-| `PATCH` | `/api/v1/tasks/:id/move` | Move task to a new status |
-| `DELETE` | `/api/v1/tasks/:id` | Delete a task |
+| `GET` | `/projects/:id/tasks` | List tasks in a project |
+| `POST` | `/projects/:id/tasks` | Create a task |
+| `GET` | `/tasks/:id` | Get a single task |
+| `PATCH` | `/tasks/:id` | Update a task |
+| `PATCH` | `/tasks/:id/move` | Move task to new status |
+| `DELETE` | `/tasks/:id` | Delete a task |
 
 ### Dependencies
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/v1/projects/:id/dependencies` | Create a dependency edge |
-| `GET` | `/api/v1/projects/:id/graph` | Get full dependency graph |
-| `GET` | `/api/v1/projects/:id/critical-path` | Get critical path analysis |
-| `GET` | `/api/v1/projects/:id/events` | Get domain event log |
+| `POST` | `/projects/:id/dependencies` | Create a dependency edge |
+| `DELETE` | `/dependencies/:id` | Remove a dependency |
+| `GET` | `/projects/:id/graph` | Get full dependency graph |
+| `GET` | `/projects/:id/critical-path` | Get critical path analysis |
+| `GET` | `/projects/:id/events` | Get domain event log |
+
+### AI Suggestions (requires `LLM_API_KEY`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/projects/:id/ai/dependency-suggestions` | Generate AI suggestions |
+| `POST` | `/ai/suggestions/:id/accept` | Accept a suggestion |
+| `POST` | `/ai/suggestions/:id/reject` | Reject a suggestion |
 
 ### Health
 | Method | Endpoint | Description |
@@ -148,69 +237,104 @@ bun run db:studio
 | `GET` | `/health` | Health check |
 | `GET` | `/ready` | Readiness check |
 
-## AI Integration
+## Data Model
 
-The system uses **OpenAI** (`gpt-4o-mini`) as the AI provider — a model that generates task scheduling suggestions and dependency analysis.
+### Project
+- `id` (int, PK), `name`, `description`, `ownerId` (FK User), `createdAt`, `members` (ProjectMember[])
 
-### How it works
+### Task
+- `id`, `projectId`, `title`, `description`, `status` (BACKLOG → IN_PROGRESS → REVIEW → DONE), `readiness` (READY/BLOCKED), `plannedStart`, `duration`, `computedStart`, `computedEnd`, `position`, `createdAt`/`updatedAt`
+- **Critical**: `readiness` NEVER accepted in any API body; `BLOCKED` tasks must not be moved to `IN_PROGRESS`
 
-1. The `ai-provider.ts` module sends task context to the OpenAI API
-2. Returns structured scheduling suggestions and risk analysis
-3. Suggestions are surfaced via the `/api/v1/ai/suggest` endpoint
+### TaskDependency
+- `id`, `prerequisiteTaskId` (FK Task), `dependentTaskId` (FK Task)
+- Atomic mutations covered by Prisma transaction over Task + TaskDependency + TaskEvent
 
-The prompt is optimized for task management domain expertise with clear instructions for scheduling recommendations.
+### TaskEvent (audit / WS broadcast)
+- `id`, `projectId`, `taskId`, `type` (TaskEventType enum), `payload` (JSON), `createdAt`
+
+### User
+- `id`, `name`, `email`, `passwordHash`, `createdAt`
+
+## WebSocket Real-time Updates
+
+Connect to `ws://localhost:4001` and subscribe to project events:
+
+```javascript
+const ws = new WebSocket("ws://localhost:4001");
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({
+    type: "PROJECT_SUBSCRIBE",
+    projectId: "your-project-id"
+  }));
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log("Real-time event:", data);
+  // Handle: TASK_MOVED, TASK_READY, TASK_BLOCKED, DEPENDENCY_ADDED, etc.
+};
+```
+
+### Event Types Broadcasted
+- `TASK_CREATED`, `TASK_UPDATED`, `TASK_MOVED`, `TASK_DELETED`
+- `TASK_READY`, `TASK_BLOCKED`
+- `DEPENDENCY_ADDED`, `DEPENDENCY_REMOVED`
+- `SCHEDULE_CHANGED`, `GRAPH_UPDATED`
+- `AI_SUGGESTION_CREATED`, `AI_SUGGESTION_ACCEPTED`, `AI_SUGGESTION_REJECTED`
 
 ## Testing
 
-### Unit Tests (Engine)
-
-19 engine tests covering:
-- Topological sort (Kahn's algorithm)
-- Cycle detection (DFS)
-- No-compounding schedule logic
-- Diamond dependency math
-- Critical path computation
-- Readiness propagation
-
 ```bash
-bun test apps/server/src/__tests__/
+# Run all tests (unit + integration)
+bun test
+
+# Run with coverage
+bun test --coverage
+
+# Individual test suites
+bun run test:server        # All server tests
+bun run test:server:engine # DAG engine unit tests only
+bun run test:ws            # WebSocket server tests
+bun run test:web           # Web app tests
 ```
 
-### Integration Tests
-
-End-to-end tests via HTTP against a live server:
-- **Auth integration**: 9 tests for register, login, JWT validation, logout
-- **Dependency integration**: 5 tests for CRUD, cycle detection, graph, critical path, events
-- **Task move integration**: 2 tests for BLOCKED guard and readiness
-- **Diamond integration**: 2 tests for compounding math and regression
+## Type Checking & Linting
 
 ```bash
-bun test apps/server/src/__tests__/
+# Type check all packages
+bun run check-types
+
+# Lint all packages
+bun run lint
+
+# Format code
+bun run format
 ```
 
-### Type Checking
+## AI Usage Disclosure
 
-```bash
-bun run typecheck
-```
+**AI assistants were used to help draft code and documentation throughout this project.** Specifically:
+- GitHub Copilot / Cursor / similar tools assisted with boilerplate, type definitions, and test scaffolding
+- LLM (OpenAI GPT-4o-mini) is used at runtime for the **optional** AI dependency suggestions feature — this is a documented product feature, not a development tool
+- No AI-generated code was accepted without human review and verification against the project's architectural constraints
 
-All 6 packages pass TypeScript strict type checking.
+## Known Limitations
 
-## Security
+- **Auth simplification**: `localStorage` JWT storage (documented simplification, not production-grade). No refresh-token rotation.
+- **WebSocket reliability**: One connection per board page; no automatic reconnect with exponential backoff.
+- **AI integration**: Graceful degradation — if LLM API is unavailable, suggestions are skipped; no fallback model cascade.
+- **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop not fully validated on all mobile browsers.
+- **Performance**: Critical-path recalculation is O(V+E) per mutation; for very large graphs (>1000 tasks) this may need caching or incremental updates.
+- **No multi-region Redis clustering** configured; single Redis instance used for Pub/Sub.
+- **No circuit breaker / retry logic** on BullMQ background jobs (AI queue).
 
-- **JWT authentication** with bcryptjs password hashing
-- **Zod validation** on all API payloads
-- **No hardcoded secrets** — all via environment variables
-- **Prisma parameterized queries** — SQL injection prevention
-- **Domain events** emitted via Redis Pub/Sub, never directly exposed
+## Documentation
 
-## Scalability
-
-- **Stateless API servers** — horizontally scalable behind a load balancer
-- **WebSocket server** for real-time updates independent of REST API
-- **Redis Pub/Sub** for cross-instance domain event distribution
-- **BullMQ queues** for background processing (AI suggestions, notifications)
-- **Prisma connection pooling** for PostgreSQL
+- **Architecture & Data Model** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Test Suite** — [`docs/TESTING.md`](docs/TESTING.md)
+- **Evaluation Criteria** — [`EVAL_CRITERIA.md`](EVAL_CRITERIA.md)
 
 ## License
 
