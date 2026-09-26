@@ -1,7 +1,5 @@
 // Database seed data for TaskFlow Pro
-import { PrismaClient } from '@repo/db/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@repo/db/client'
 
 async function main() {
   console.log('Starting database seeding...')
@@ -320,7 +318,4 @@ main()
   .catch((e) => {
     console.error('Seeding error:', e)
     process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
   })
