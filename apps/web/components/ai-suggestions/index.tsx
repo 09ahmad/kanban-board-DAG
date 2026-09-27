@@ -40,10 +40,10 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
   const accept = useCallback(
     async (suggestion: AiSuggestionItem) => {
       try {
-        await apiClient(`/ai/suggestions/${suggestion.prerequisiteTaskId}/accept`, {
+        await apiClient(`/ai/suggestions/${suggestion.id}/accept`, {
           method: "POST",
         });
-        setSuggestions((prev) => prev.filter((s) => s !== suggestion));
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
       } catch (err: any) {
         setError(err?.error?.message ?? "Accept failed");
       }
@@ -54,10 +54,10 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
   const reject = useCallback(
     async (suggestion: AiSuggestionItem) => {
       try {
-        await apiClient(`/ai/suggestions/${suggestion.prerequisiteTaskId}/reject`, {
+        await apiClient(`/ai/suggestions/${suggestion.id}/reject`, {
           method: "POST",
         });
-        setSuggestions((prev) => prev.filter((s) => s !== suggestion));
+        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
       } catch (err: any) {
         setError(err?.error?.message ?? "Reject failed");
       }
@@ -94,13 +94,13 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
       <div className="space-y-3">
         {suggestions.map((suggestion) => (
           <div
-            key={`${suggestion.prerequisiteTaskId}-${suggestion.confidence}`}
+            key={suggestion.id}
             className="bg-surface-soft rounded-lg p-4 border border-hairline"
           >
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Badge variant="pill">
-                  {suggestion.confidence}% confidence
+                  {Math.round(suggestion.confidence * 100)}% confidence
                 </Badge>
               </div>
               {suggestion.reason && (

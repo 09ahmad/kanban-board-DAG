@@ -9,7 +9,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 }
 
@@ -18,6 +18,11 @@ interface User {
   email: string;
   name: string;
   createdAt?: string;
+}
+
+interface AuthResponse {
+  user: User;
+  token: string;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -53,30 +58,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshMe]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await apiClient<{ token: string }>("/auth/login", {
+    const res = await apiClient<AuthResponse>("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    const token = unwrapResponse(res).token;
+    const { token, user } = unwrapResponse(res);
     localStorage.setItem("jwt_token", token);
     setToken(token);
-    await refreshMe();
+    setUser(user);
   }, [refreshMe]);
 
   const register = useCallback(async (name: string, email: string, password: string) => {
-    const res = await apiClient<{ token: string }>("/auth/register", {
+    const res = await apiClient<AuthResponse>("/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, password }),
     });
-    const token = unwrapResponse(res).token;
+    const { token, user } = unwrapResponse(res);
     localStorage.setItem("jwt_token", token);
     setToken(token);
-    await refreshMe();
+    setUser(user);
   }, [refreshMe]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      await apiClient("/auth/logout", { method: "POST" });
+    } catch {
+      // Ignore errors, still clear local state
+    }
     localStorage.removeItem("jwt_token");
     setUser(null);
     setToken(null);

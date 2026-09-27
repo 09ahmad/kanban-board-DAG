@@ -1,33 +1,43 @@
 "use client";
 
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
-import { SortableContext, arrayMove } from "@dnd-kit/sortable";
-import { useState, useCallback } from "react";
-import { apiClient } from "@/lib/api-client";
+import { useState, useCallback, useMemo } from "react";
 import type { Task, TaskDependency } from "@repo/types";
 import { TaskStatus } from "@repo/types";
 import { KanbanColumn } from "@/components/kanban-board/board-column";
 import { TaskCard } from "@/components/kanban-board/task-card";
-import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toaster";
-import { cn } from "@/lib/utils";
 
 interface KanbanBoardProps {
-  projectId: number;
-  initialTasks: Task[];
-  initialDependencies: TaskDependency[];
-  onMoveTask: (taskId: number, status: TaskStatus) => Promise<void>;
+  columns: Array<{ id: TaskStatus; title: string; tasks: Task[] }>;
+  dependencies: TaskDependency[];
+  criticalTaskIds: number[];
+  onMoveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
+  onReorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
   onTaskClick: (taskId: number) => void;
+  onDeleteTask: (taskId: number) => void;
 }
 
-export function KanbanBoard({ projectId, initialTasks, initialDependencies, onMoveTask, onTaskClick }: KanbanBoardProps) {
-  const [tasks, setTasks] = useState<Map<number, Task>>(new Map(initialTasks.map(t => [t.id, t])));
-  const [dependencies] = useState<TaskDependency[]>(initialDependencies);
+export function KanbanBoard({
+  columns,
+  dependencies,
+  criticalTaskIds,
+  onMoveTask,
+  onReorderTask,
+  onTaskClick,
+  onDeleteTask,
+}: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
   const { toast } = useToast();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const criticalSet = useMemo(() => new Set(criticalTaskIds), [criticalTaskIds]);
+  const activeTask = useMemo(
+    () => (activeId === null ? null : columns.flatMap((c) => c.tasks).find((t) => t.id === activeId) ?? null),
+    [activeId, columns]
   );
 
   const handleDragStart = useCallback((event: any) => {
@@ -44,35 +54,46 @@ export function KanbanBoard({ projectId, initialTasks, initialDependencies, onMo
       const taskId = Number(active.id);
       const overId = over.id;
 
-      // Determine if dropped on a column or another task
-      const targetStatus = Object.values(TaskStatus).find((s) => s === overId) ||
-        (tasks.get(Number(overId))?.status as TaskStatus);
+      const targetStatus = Object.values(TaskStatus).find((s) => s === overId);
+      const targetTaskId = targetStatus ? null : Number(overId);
 
-      if (!targetStatus) return;
+      if (targetStatus) {
+        const column = columns.find((c) => c.id === targetStatus);
+        const targetPosition = column?.tasks.length ?? 0;
 
-      // Guard: blocked tasks cannot be moved to IN_PROGRESS
-      const task = tasks.get(taskId);
-      if (task?.readiness === "BLOCKED" && targetStatus === "IN_PROGRESS") {
-        toast({ type: "error", message: "This task is blocked. Resolve dependencies first." });
+        try {
+          await onMoveTask(taskId, targetStatus, targetPosition);
+          toast({ type: "success", message: `Task moved to ${targetStatus.replace("_", " ")}` });
+        } catch (err: any) {
+          toast({ type: "error", message: err?.error?.message ?? "Move failed" });
+        }
         return;
       }
 
-      try {
-        await onMoveTask(taskId, targetStatus);
-        toast({ type: "success", message: `Task moved to ${targetStatus.replace("_", " ")}` });
-      } catch (err: any) {
-        toast({ type: "error", message: err?.error?.message ?? "Move failed" });
+      if (targetTaskId) {
+        const activeTask = columns.flatMap((c) => c.tasks).find((t) => t.id === taskId);
+        const overTask = columns.flatMap((c) => c.tasks).find((t) => t.id === targetTaskId);
+
+        if (!activeTask || !overTask || activeTask.status !== overTask.status) return;
+
+        const currentColumn = columns.find((c) => c.id === activeTask.status);
+        if (!currentColumn) return;
+
+        const activeIndex = currentColumn.tasks.findIndex((t) => t.id === taskId);
+        const overIndex = currentColumn.tasks.findIndex((t) => t.id === targetTaskId);
+
+        if (activeIndex === -1 || overIndex === -1) return;
+
+        try {
+          await onReorderTask(taskId, overIndex, activeTask.status);
+          toast({ type: "success", message: "Task reordered" });
+        } catch (err: any) {
+          toast({ type: "error", message: err?.error?.message ?? "Reorder failed" });
+        }
       }
     },
-    [tasks, onMoveTask, toast]
+    [columns, onMoveTask, onReorderTask, toast]
   );
-
-  const statusOrder: TaskStatus[] = ["BACKLOG", "IN_PROGRESS", "REVIEW", "DONE"];
-  const columns = statusOrder.map((status) => ({
-    id: status,
-    title: status.replace("_", " "),
-    tasks: Array.from(tasks.values()).filter((t) => t.status === status),
-  }));
 
   return (
     <DndContext
@@ -89,17 +110,17 @@ export function KanbanBoard({ projectId, initialTasks, initialDependencies, onMo
             title={col.title}
             tasks={col.tasks}
             onTaskClick={onTaskClick}
+            onDeleteTask={onDeleteTask}
+            criticalTaskIds={criticalTaskIds}
           />
         ))}
       </div>
 
-      {activeId && (
+      {activeTask && (
         <DragOverlay>
-          {tasks.get(activeId) ? (
-            <div className="bg-surface-card border border-hairline rounded-md p-3 shadow-md">
-              <TaskCard task={tasks.get(activeId)!} />
-            </div>
-          ) : null}
+          <div className="bg-surface-card border border-hairline rounded-md p-3 shadow-md">
+            <TaskCard task={activeTask} isCritical={criticalSet.has(activeTask.id)} />
+          </div>
         </DragOverlay>
       )}
     </DndContext>

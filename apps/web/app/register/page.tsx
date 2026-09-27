@@ -19,7 +19,7 @@ export default function RegisterPage() {
     setError(null);
     try {
       await register(name, email, password);
-      router.push("/");
+      router.push("/projects");
     } catch (err: any) {
       setError(err?.error?.message ?? "Registration failed");
     }

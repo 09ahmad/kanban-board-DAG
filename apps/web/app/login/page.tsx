@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 
+const DEMO_ACCOUNTS = [
+  { name: "Alice", email: "alice@example.com", password: "alice123", note: "owns Website Redesign" },
+  { name: "Bob", email: "bob@example.com", password: "bob123", note: "owns Mobile App" },
+  { name: "Charlie", email: "charlie@example.com", password: "charlie123", note: "member only" },
+];
+
 export default function LoginPage() {
   const { login, loading } = useAuth();
   const [email, setEmail] = useState("");
@@ -18,7 +24,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email, password);
-      router.push("/");
+      router.push("/projects");
     } catch (err: any) {
       setError(err?.error?.message ?? "Login failed");
     }
@@ -81,6 +87,31 @@ export default function LoginPage() {
             </Button>
           </div>
         </form>
+
+        <div className="space-y-2">
+          <p className="text-[13px] text-muted">
+            Seeded accounts &mdash; pick one to fill the form.
+          </p>
+          <ul className="space-y-1.5">
+            {DEMO_ACCOUNTS.map((account) => (
+              <li key={account.email}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail(account.email);
+                    setPassword(account.password);
+                    setError(null);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md border border-hairline bg-surface-soft hover:border-primary/30 text-left"
+                >
+                  <span className="font-medium text-[14px] text-ink">{account.name}</span>
+                  <span className="flex-1 truncate text-[13px] text-muted">{account.email}</span>
+                  <span className="text-[12px] text-muted">{account.note}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
 
         <p className="text-center text-[14px]">
           Don't have an account?{" "}

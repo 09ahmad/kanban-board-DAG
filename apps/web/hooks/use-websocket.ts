@@ -15,7 +15,12 @@ export function useWebSocket(projectId: number, onEvent: (event: WSEvent) => voi
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   const connect = useCallback(() => {
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4000/ws";
+    // Don't connect if projectId is invalid (0, negative, NaN)
+    if (!projectId || projectId <= 0) {
+      return;
+    }
+    
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
     try {
       const ws = new WebSocket(`${wsUrl}?projectId=${projectId}`);
 

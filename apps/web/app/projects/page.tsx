@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import type { Project } from "@repo/types";
 
 interface ProjectsPageData {
-  projects: Project[];
+  projects?: Project[];
 }
 
 export default function ProjectsPage() {
@@ -28,8 +28,8 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const res = await apiClient<ProjectsPageData>("/projects");
-      setProjects(unwrapResponse(res).projects);
+      const res = await apiClient<Project[]>("/projects");
+      setProjects(unwrapResponse(res) || []);
     } catch {
       // handled by error boundary
     } finally {
@@ -132,7 +132,7 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => (
-              <Link key={project.id} href={`/board/${project.id}`}>
+              <Link key={project.id} href={`/projects/${project.id}`}>
                 <Card className="hover:border-primary/30 transition-colors cursor-pointer group">
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="font-display text-[20px] text-ink group-hover:text-primary transition-colors">

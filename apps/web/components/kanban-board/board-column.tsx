@@ -1,3 +1,5 @@
+"use client";
+
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { cn } from "@/lib/utils";
@@ -10,6 +12,8 @@ interface KanbanColumnProps {
   tasks: Task[];
   isOverlay?: boolean;
   onTaskClick: (taskId: number) => void;
+  onDeleteTask?: (taskId: number) => void;
+  criticalTaskIds: number[];
 }
 
 export function KanbanColumn({
@@ -18,11 +22,15 @@ export function KanbanColumn({
   tasks,
   isOverlay,
   onTaskClick,
+  onDeleteTask,
+  criticalTaskIds,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
     data: { type: "column", status: id },
   });
+
+  const criticalSet = new Set(criticalTaskIds);
 
   return (
     <div
@@ -52,6 +60,9 @@ export function KanbanColumn({
               key={task.id}
               task={task}
               onClick={() => onTaskClick(task.id)}
+              onDeleteTask={onDeleteTask}
+              isCritical={criticalSet.has(task.id)}
+              columnId={id}
             />
           ))}
         </SortableContext>

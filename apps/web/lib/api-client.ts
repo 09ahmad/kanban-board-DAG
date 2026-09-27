@@ -11,8 +11,8 @@ const apiClient = async <T>(endpoint: string, options: RequestInit = {}): Promis
   }
 
   const response = await fetch(`${BASE_URL}${endpoint}`, {
-    headers,
     ...options,
+    headers,
   });
 
   const data = await response.json();

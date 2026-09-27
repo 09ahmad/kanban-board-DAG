@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -11,18 +12,56 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Task, TaskDependency } from "@repo/types";
 import { TaskStatus } from "@repo/types";
+import { useRouter } from "next/navigation";
+import { useWebSocket } from "@/hooks/use-websocket";
+import { useToast } from "@/components/toaster";
+import type { TaskEventType } from "@repo/types";
+import { use } from "react";
 
-export default function TaskDetailPage({ params }: { params: { taskId: string } }) {
-  const taskId = Number(params.taskId);
+interface GraphData {
+  tasks: Task[];
+  dependencies: TaskDependency[];
+}
+
+function getStatusLabel(status: TaskStatus): string {
+  return status.replace("_", " ");
+}
+
+function getStatusBadgeVariant(status: TaskStatus): "pill" | "in-progress" | "review" | "done" {
+  switch (status) {
+    case "BACKLOG": return "pill";
+    case "IN_PROGRESS": return "in-progress";
+    case "REVIEW": return "review";
+    case "DONE": return "done";
+    default: return "pill";
+  }
+}
+
+function getReadinessBadgeVariant(readiness: "READY" | "BLOCKED"): "ready" | "blocked" {
+  return readiness === "READY" ? "ready" : "blocked";
+}
+
+export default function TaskDetailPage({ params }: { params: Promise<{ taskId: string }> }) {
+  const { taskId: taskIdStr } = use(params);
+  const taskId = Number(taskIdStr);
   const { user } = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
   const [task, setTask] = useState<Task | null>(null);
+  const [prerequisites, setPrerequisites] = useState<TaskDependency[]>([]);
+  const [dependents, setDependents] = useState<TaskDependency[]>([]);
+  const [prereqTasks, setPrereqTasks] = useState<Map<number, Task>>(new Map());
+  const [dependentTasks, setDependentTasks] = useState<Map<number, Task>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>("BACKLOG");
+  const [plannedStart, setPlannedStart] = useState("");
+  const [duration, setDuration] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchTask();
@@ -30,16 +69,43 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
 
   const fetchTask = async () => {
     try {
-      const res = await apiClient<{ task: Task; prerequisites: TaskDependency[]; dependents: TaskDependency[] }>(
-        `/tasks/${taskId}`
-      );
-      const data = unwrapResponse(res);
-      setTask(data.task);
-      setTitle(data.task.title);
-      setDescription(data.task.description ?? "");
-      setStatus(data.task.status);
+      const res = await apiClient<Task>(`/tasks/${taskId}`);
+      const taskData = unwrapResponse(res);
+      setTask(taskData);
+      setTitle(taskData.title);
+      setDescription(taskData.description ?? "");
+      setStatus(taskData.status);
+      setPlannedStart(taskData.plannedStart ? new Date(taskData.plannedStart).toISOString().slice(0, 10) : "");
+      setDuration(taskData.duration ? String(taskData.duration) : "");
+
+      // Derive prerequisites/dependents from the project graph
+      const graphRes = await apiClient<GraphData>(`/projects/${taskData.projectId}/graph`);
+      const graphData = unwrapResponse(graphRes);
+      const taskMap = new Map(graphData.tasks.map((t) => [t.id, t]));
+
+      const nextPrereqs: TaskDependency[] = [];
+      const nextDependents: TaskDependency[] = [];
+      const prereqMap = new Map<number, Task>();
+      const dependentMap = new Map<number, Task>();
+      for (const dep of graphData.dependencies) {
+        if (dep.dependentTaskId === taskId) {
+          nextPrereqs.push(dep);
+          const t = taskMap.get(dep.prerequisiteTaskId);
+          if (t) prereqMap.set(t.id, t);
+        }
+        if (dep.prerequisiteTaskId === taskId) {
+          nextDependents.push(dep);
+          const t = taskMap.get(dep.dependentTaskId);
+          if (t) dependentMap.set(t.id, t);
+        }
+      }
+      setPrerequisites(nextPrereqs);
+      setDependents(nextDependents);
+      setPrereqTasks(prereqMap);
+      setDependentTasks(dependentMap);
+      setError(null);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to load task");
+      setError(err?.error?.message ?? "Failed to load task");
     } finally {
       setLoading(false);
     }
@@ -48,19 +114,71 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const durationValue = Number.parseInt(duration, 10);
       await apiClient(`/tasks/${taskId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, status }),
+        body: JSON.stringify({
+          title,
+          description: description || undefined,
+          status,
+          ...(plannedStart ? { plannedStart } : {}),
+          ...(duration && Number.isFinite(durationValue) && durationValue > 0 ? { duration: durationValue } : {}),
+        }),
       });
       setEditing(false);
+      toast({ type: "success", message: "Task updated" });
       await fetchTask();
     } catch (err: any) {
-      setError(err?.message ?? "Save failed");
+      toast({ type: "error", message: err?.error?.message ?? "Save failed" });
     } finally {
       setSaving(false);
     }
   };
+
+  const handleDeleteTask = async () => {
+    setDeleting(true);
+    try {
+      await apiClient(`/tasks/${taskId}`, { method: "DELETE" });
+      toast({ type: "success", message: "Task deleted" });
+      router.push(task?.projectId ? `/board/${task.projectId}` : "/projects");
+    } catch (err: any) {
+      toast({ type: "error", message: err?.error?.message ?? "Delete failed" });
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteDependency = async (dependencyId: number) => {
+    try {
+      await apiClient(`/dependencies/${dependencyId}`, { method: "DELETE" });
+      toast({ type: "success", message: "Dependency removed" });
+      await fetchTask();
+    } catch (err: any) {
+      toast({ type: "error", message: err?.error?.message ?? "Failed to remove dependency" });
+    }
+  };
+
+  const handleWSEvent = useCallback((event: { type: TaskEventType; projectId: number; taskId?: number; payload: Record<string, unknown> }) => {
+    if (event.taskId !== taskId) return;
+    
+    switch (event.type) {
+      case "TASK_UPDATED":
+      case "TASK_MOVED":
+      case "TASK_READY":
+      case "TASK_BLOCKED":
+      case "DEPENDENCY_ADDED":
+      case "DEPENDENCY_REMOVED":
+        fetchTask();
+        break;
+      case "TASK_DELETED":
+        router.push("/projects");
+        break;
+    }
+  }, [taskId, router, fetchTask]);
+
+  // Only subscribe to WebSocket after task loads and we have projectId
+  const projectId = task?.projectId;
+  useWebSocket(projectId || 0, handleWSEvent);
 
   if (loading) {
     return (
@@ -164,10 +282,54 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
         <div className="space-y-4">
           <h2 className="font-display text-[24px] text-ink">Prerequisites (waiting on)</h2>
           <div className="space-y-3">
-            {/* Prerequisites would come from API — placeholder */}
-            <p className="text-body text-[14px] text-muted">
-              Prerequisites list loads from the graph data.
-            </p>
+            {prerequisites.length === 0 ? (
+              <p className="text-body text-[14px] text-muted">
+                No prerequisites. This task can start immediately.
+              </p>
+            ) : (
+              prerequisites.map((dep) => {
+                const prereqTask = prereqTasks.get(dep.prerequisiteTaskId);
+                return (
+                  <div key={dep.id} className="card p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-sm">
+                        {prereqTask ? prereqTask.title.charAt(0).toUpperCase() : dep.prerequisiteTaskId}
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <p className="font-medium text-ink truncate">
+                          {prereqTask ? prereqTask.title : `Task #${dep.prerequisiteTaskId}`}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {prereqTask && (
+                            <>
+                              <Badge variant={getStatusBadgeVariant(prereqTask.status)}>
+                                {getStatusLabel(prereqTask.status)}
+                              </Badge>
+                              <Badge variant={getReadinessBadgeVariant(prereqTask.readiness)}>
+                                {prereqTask.readiness}
+                              </Badge>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="pill">{prereqTask?.readiness ?? "Waiting"}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteDependency(dep.id)}
+                        className="text-error hover:text-error"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -175,10 +337,54 @@ export default function TaskDetailPage({ params }: { params: { taskId: string } 
         <div className="space-y-4">
           <h2 className="font-display text-[24px] text-ink">Dependents (waiting on this)</h2>
           <div className="space-y-3">
-            {/* Dependents would come from API — placeholder */}
-            <p className="text-body text-[14px] text-muted">
-              Dependent tasks list loads from the graph data.
-            </p>
+            {dependents.length === 0 ? (
+              <p className="text-body text-[14px] text-muted">
+                No dependents. No tasks are waiting on this one.
+              </p>
+            ) : (
+              dependents.map((dep) => {
+                const dependentTask = dependentTasks.get(dep.dependentTaskId);
+                return (
+                  <div key={dep.id} className="card p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-sm">
+                        {dependentTask ? dependentTask.title.charAt(0).toUpperCase() : dep.dependentTaskId}
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <p className="font-medium text-ink truncate">
+                          {dependentTask ? dependentTask.title : `Task #${dep.dependentTaskId}`}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {dependentTask && (
+                            <>
+                              <Badge variant={getStatusBadgeVariant(dependentTask.status)}>
+                                {getStatusLabel(dependentTask.status)}
+                              </Badge>
+                              <Badge variant={getReadinessBadgeVariant(dependentTask.readiness)}>
+                                {dependentTask.readiness}
+                              </Badge>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="pill">{dependentTask?.readiness ?? "Waiting"}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteDependency(dep.id)}
+                        className="text-error hover:text-error"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>

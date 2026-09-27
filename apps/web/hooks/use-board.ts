@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { useToast } from "@/components/toaster";
-import type { Task, TaskDependency } from "@repo/types";
+import type { Task, TaskDependency, TaskEvent, CreateTaskInput } from "@repo/types";
 import { TaskStatus } from "@repo/types";
 
 interface BoardColumnData {
@@ -10,15 +10,26 @@ interface BoardColumnData {
   tasks: Task[];
 }
 
+interface CriticalPathResult {
+  criticalTaskIds: number[];
+  criticalEdges: Array<{ prerequisiteTaskId: number; dependentTaskId: number }>;
+  totalDurationDays: number;
+}
+
 interface UseBoardReturn {
   tasks: Map<number, Task>;
   dependencies: TaskDependency[];
   columns: BoardColumnData[];
   loading: boolean;
   error: string | null;
-  moveTask: (taskId: number, status: TaskStatus) => Promise<void>;
-  createTask: (projectId: number, title: string) => Promise<Task>;
+  moveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
+  reorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
+  createTask: (input: CreateTaskInput) => Promise<Task>;
   deleteTask: (taskId: number) => Promise<void>;
+  createDependency: (prerequisiteTaskId: number, dependentTaskId: number) => Promise<void>;
+  deleteDependency: (dependencyId: number) => Promise<void>;
+  fetchCriticalPath: () => Promise<CriticalPathResult | null>;
+  fetchEvents: (limit?: number, before?: number) => Promise<TaskEvent[]>;
   refetch: () => Promise<void>;
 }
 
@@ -55,12 +66,12 @@ export function useBoard(projectId: number): UseBoardReturn {
   }, [refetch]);
 
   const moveTask = useCallback(
-    async (taskId: number, status: TaskStatus) => {
+    async (taskId: number, status: TaskStatus, position?: number) => {
       setTasks((prev) => {
         const next = new Map(prev);
         const task = next.get(taskId);
         if (task) {
-          next.set(taskId, { ...task, status });
+          next.set(taskId, { ...task, status, position: position ?? task.position });
         }
         return next;
       });
@@ -69,7 +80,7 @@ export function useBoard(projectId: number): UseBoardReturn {
         await apiClient(`/tasks/${taskId}/move`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status }),
+          body: JSON.stringify({ status, position }),
         });
         toast({ type: "success", message: `Task moved to ${status.replace("_", " ")}` });
       } catch (err: any) {
@@ -81,7 +92,41 @@ export function useBoard(projectId: number): UseBoardReturn {
           }
           return next;
         });
-        toast({ type: "error", message: err?.message ?? "Move failed" });
+        toast({ type: "error", message: err?.error?.message ?? "Move failed" });
+        throw err;
+      }
+    },
+    [toast]
+  );
+
+  const reorderTask = useCallback(
+    async (taskId: number, newPosition: number, status: TaskStatus) => {
+      setTasks((prev) => {
+        const next = new Map(prev);
+        const task = next.get(taskId);
+        if (task) {
+          next.set(taskId, { ...task, position: newPosition });
+        }
+        return next;
+      });
+
+      try {
+        await apiClient(`/tasks/${taskId}/move`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, position: newPosition }),
+        });
+        toast({ type: "success", message: "Task reordered" });
+      } catch (err: any) {
+        setTasks((prev) => {
+          const next = new Map(prev);
+          const task = next.get(taskId);
+          if (task) {
+            next.set(taskId, { ...task, position: task.position });
+          }
+          return next;
+        });
+        toast({ type: "error", message: err?.error?.message ?? "Reorder failed" });
         throw err;
       }
     },
@@ -89,17 +134,20 @@ export function useBoard(projectId: number): UseBoardReturn {
   );
 
   const createTask = useCallback(
-    async (pid: number, title: string) => {
-      const res = await apiClient<Task>(`/projects/${pid}/tasks`, {
+    async (input: CreateTaskInput): Promise<Task> => {
+      const res = await apiClient<Task>(`/projects/${projectId}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({
+          title: input.title,
+          ...(input.description ? { description: input.description } : {}),
+          ...(input.plannedStart ? { plannedStart: input.plannedStart } : {}),
+          ...(input.duration ? { duration: input.duration } : {}),
+        }),
       });
-      const data = unwrapResponse(res);
-      await refetch();
-      return data;
+      return unwrapResponse(res);
     },
-    [refetch]
+    [projectId]
   );
 
   const deleteTask = useCallback(
@@ -110,11 +158,65 @@ export function useBoard(projectId: number): UseBoardReturn {
     [refetch]
   );
 
+  const createDependency = useCallback(
+    async (prerequisiteTaskId: number, dependentTaskId: number) => {
+      try {
+        await apiClient(`/projects/${projectId}/dependencies`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prerequisiteTaskId, dependentTaskId }),
+        });
+        toast({ type: "success", message: "Dependency created" });
+        await refetch();
+      } catch (err: any) {
+        toast({ type: "error", message: err?.error?.message ?? "Failed to create dependency" });
+        throw err;
+      }
+    },
+    [projectId, refetch, toast]
+  );
+
+  const deleteDependency = useCallback(
+    async (dependencyId: number) => {
+      try {
+        await apiClient(`/dependencies/${dependencyId}`, { method: "DELETE" });
+        toast({ type: "success", message: "Dependency removed" });
+        await refetch();
+      } catch (err: any) {
+        toast({ type: "error", message: err?.error?.message ?? "Failed to remove dependency" });
+        throw err;
+      }
+    },
+    [refetch, toast]
+  );
+
+  const fetchCriticalPath = useCallback(async (): Promise<CriticalPathResult | null> => {
+    try {
+      const res = await apiClient<CriticalPathResult>(`/projects/${projectId}/critical-path`);
+      return unwrapResponse(res);
+    } catch (err: any) {
+      toast({ type: "error", message: err?.error?.message ?? "Failed to fetch critical path" });
+      return null;
+    }
+  }, [projectId, toast]);
+
+  const fetchEvents = useCallback(async (limit = 50, before?: number): Promise<TaskEvent[]> => {
+    try {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (before) params.set("before", String(before));
+      const res = await apiClient<TaskEvent[]>(`/projects/${projectId}/events?${params}`);
+      return unwrapResponse(res) || [];
+    } catch (err: any) {
+      toast({ type: "error", message: err?.error?.message ?? "Failed to fetch events" });
+      return [];
+    }
+  }, [projectId, toast]);
+
   const columns = statusOrder.map((status) => ({
     id: status,
     title: status.replace("_", " "),
     tasks: Array.from(tasks.values()).filter((t) => t.status === status),
   }));
 
-  return { tasks, dependencies, columns, loading, error, moveTask, createTask, deleteTask, refetch };
+  return { tasks, dependencies, columns, loading, error, moveTask, reorderTask, createTask, deleteTask, createDependency, deleteDependency, fetchCriticalPath, fetchEvents, refetch };
 }

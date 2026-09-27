@@ -1,10 +1,52 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.push("/projects");
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-canvas">
+        <header className="h-[64px] bg-canvas border-b border-hairline sticky top-0 z-40">
+          <div className="max-w-[1200px] mx-auto h-full px-6 flex items-center justify-between">
+            <Link href="/" className="flex items-center gap-2 font-display text-xl text-ink">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+              <span>TaskFlow Pro</span>
+            </Link>
+            <nav className="flex items-center gap-6">
+              <Link href="/login" className="nav-link text-body">
+                Log in
+              </Link>
+              <Link href="/register" className="btn-primary">
+                Get started
+              </Link>
+            </nav>
+          </div>
+        </header>
+        <main className="flex items-center justify-center h-[calc(100vh-64px)]">
+          <p className="text-muted text-[16px]">Loading…</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-canvas">

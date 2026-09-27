@@ -37,7 +37,6 @@ export function AppLayout({ children }: AppLayoutProps) {
           <nav className="flex-1 flex items-center justify-between px-8">
             <div className="flex items-center gap-6">
               <NavLink href="/projects">Projects</NavLink>
-              <NavLink href="/projects">Dashboard</NavLink>
             </div>
 
             <div className="flex items-center gap-4">
