@@ -9,9 +9,18 @@ import { Badge } from "@/components/ui/badge";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
 import type { Project } from "@repo/types";
+import { ProjectListSkeleton } from "@/components/ui/skeleton";
 
 interface ProjectsPageData {
   projects?: Project[];
+}
+
+/** Accepts a raw project ID ("147") or a full invite URL (".../projects/147/invite"). */
+export function parseProjectInvite(raw: string): number | null {
+  const value = raw.trim();
+  if (/^\d+$/.test(value)) return Number(value);
+  const match = value.match(/\/projects\/(\d+)(?:\/invite)?\/?$/);
+  return match ? Number(match[1]) : null;
 }
 
 export default function ProjectsPage() {
@@ -65,9 +74,7 @@ export default function ProjectsPage() {
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted text-[16px]">Loading projects…</p>
-        </div>
+        <ProjectListSkeleton />
       </AppLayout>
     );
   }

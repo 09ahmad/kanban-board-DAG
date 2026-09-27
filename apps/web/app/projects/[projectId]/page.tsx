@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth-context";
 import type { Project, ProjectMember, Task, TaskDependency } from "@repo/types";
 import { ProjectRole, TaskStatus } from "@repo/types";
 import { useToast } from "@/components/toaster";
+import { GraphSkeleton } from "@/components/ui/skeleton";
 
 interface ProjectDetailData {
   project: Project & { members: ProjectMember[] };
@@ -138,9 +139,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted text-[16px]">Loading project…</p>
-        </div>
+        <GraphSkeleton />
       </AppLayout>
     );
   }

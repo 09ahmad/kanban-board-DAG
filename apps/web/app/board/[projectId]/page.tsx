@@ -14,10 +14,14 @@ import { CreateTaskModal } from "@/components/kanban-board/create-task-modal";
 import { DependencyList } from "@/components/kanban-board/dependency-list";
 import { CriticalPathDisplay } from "@/components/critical-path-display";
 import { ProjectEvents } from "@/components/project-events";
+import { MembersAvatarRow } from "@/components/members-avatar-row";
 import type { TaskEventType, Task, CriticalPathResult } from "@repo/types";
+import { BoardSkeleton } from "@/components/ui/skeleton";
 
 /** How long a delete waits for the graph event before falling back to REST. */
 const DELETE_FALLBACK_MS = 4000;
+/** Cascading readiness events arrive one per task; batch them into one toast. */
+const READINESS_TOAST_MS = 400;
 
 export default function BoardPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId: projectIdStr } = use(params);
@@ -172,9 +176,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted text-[16px]">Loading board…</p>
-        </div>
+        <BoardSkeleton />
       </AppLayout>
     );
   }

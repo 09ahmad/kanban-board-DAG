@@ -17,8 +17,10 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { useToast } from "@/components/toaster";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AddDependencyModal } from "@/components/kanban-board/add-dependency-modal";
+import { AiSuggestions } from "@/components/ai-suggestions";
 import type { TaskEventType } from "@repo/types";
 import { use } from "react";
+import { TaskDetailSkeleton } from "@/components/ui/skeleton";
 
 interface GraphData {
   tasks: Task[];
@@ -249,9 +251,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted text-[16px]">Loading task…</p>
-        </div>
+        <TaskDetailSkeleton />
       </AppLayout>
     );
   }
