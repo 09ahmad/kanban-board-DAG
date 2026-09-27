@@ -121,7 +121,8 @@ The DAG engine inside `apps/server/src/engine/` is a pure TypeScript domain modu
 ### Endpoint Matrix:
 - **Auth**: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`
 - **Projects**: `POST /api/v1/projects`, `GET /api/v1/projects`, `GET /api/v1/projects/:projectId`, `PATCH /api/v1/projects/:projectId`, `DELETE /api/v1/projects/:projectId`
-- **Members**: `POST /api/v1/projects/:projectId/members`, `DELETE /api/v1/projects/:projectId/members/:userId`
+- **Members**: `GET /api/v1/projects/:projectId/members` (members only), `POST /api/v1/projects/:projectId/members`, `DELETE /api/v1/projects/:projectId/members/:userId`
+- **Preview & Join**: `GET /api/v1/projects/:projectId/preview`, `POST /api/v1/projects/:projectId/join` — both open to any signed-in user. Joining is deliberately open: the schema has no invite, visibility, or privacy field, so there is nothing to gate on. Do not add a membership check to `join` without also adding a way to be invited.
 - **Tasks**: `POST /api/v1/projects/:projectId/tasks`, `GET /api/v1/projects/:projectId/tasks`, `GET /api/v1/tasks/:taskId`, `PATCH /api/v1/tasks/:taskId`, `PATCH /api/v1/tasks/:taskId/move`, `DELETE /api/v1/tasks/:taskId`
 - **Dependencies**: `POST /api/v1/projects/:projectId/dependencies`, `DELETE /api/v1/dependencies/:dependencyId`
 - **Graph & Critical Path**: `GET /api/v1/projects/:projectId/graph`, `GET /api/v1/projects/:projectId/critical-path`

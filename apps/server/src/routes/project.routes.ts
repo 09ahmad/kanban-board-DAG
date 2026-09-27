@@ -26,6 +26,21 @@ projectRouter.use(authMiddleware);
 projectRouter.post("/", validate(CreateProjectSchema), asyncHandler(projectController.create));
 projectRouter.get("/", asyncHandler(projectController.list));
 projectRouter.get(
+  "/:projectId/preview",
+  validate(ProjectIdParamsSchema, "params"),
+  asyncHandler(projectController.preview),
+);
+projectRouter.get(
+  "/:projectId/members",
+  validate(ProjectIdParamsSchema, "params"),
+  asyncHandler(projectController.members),
+);
+projectRouter.post(
+  "/:projectId/join",
+  validate(ProjectIdParamsSchema, "params"),
+  asyncHandler(projectController.join),
+);
+projectRouter.get(
   "/:projectId",
   validate(ProjectIdParamsSchema, "params"),
   asyncHandler(projectController.get),

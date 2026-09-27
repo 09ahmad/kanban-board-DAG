@@ -98,6 +98,64 @@ export class ProjectService {
     });
   }
 
+  async getProjectPreview(projectId: number): Promise<{ name: string; description: string | null; memberCount: number }> {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      include: { _count: { select: { members: true } } },
+    });
+    if (!project) throw new NotFoundError("Project");
+    return {
+      name: project.name,
+      description: project.description,
+      memberCount: project._count.members,
+    };
+  }
+
+  async getMembers(projectId: number, userId: number): Promise<Array<{ id: number; userId: number; name: string; email: string; role: ProjectRole; joinedAt: Date }>> {
+    await this.requireMember(projectId, userId);
+    const members = await prisma.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { name: true, email: true } } },
+      orderBy: { joinedAt: "asc" },
+    });
+    return members.map((m) => ({
+      id: m.id,
+      userId: m.userId,
+      name: m.user.name,
+      email: m.user.email,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    }));
+  }
+
+  /**
+   * Open join: any authenticated user may join any project. There is no invite,
+   * visibility, or privacy concept in the schema, so project membership is not a
+   * boundary between tenants. See the README's Known Limitations.
+   */
+  async joinProject(projectId: number, userId: number): Promise<{ membership: ProjectMember; alreadyMember: boolean }> {
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundError("Project");
+
+    // Join is idempotent, so a second call is an answer rather than a conflict.
+    // Inserting directly and catching the unique violation is what makes that
+    // true under concurrency: a find-then-create would let two simultaneous
+    // joins race, and the loser would surface a 500 instead of `alreadyMember`.
+    try {
+      const membership = await prisma.projectMember.create({
+        data: { projectId, userId, role: "MEMBER" },
+      });
+      return { membership, alreadyMember: false };
+    } catch (err) {
+      if ((err as { code?: string }).code !== "P2002") throw err;
+      const membership = await prisma.projectMember.findUnique({
+        where: { projectId_userId: { projectId, userId } },
+      });
+      if (!membership) throw err;
+      return { membership, alreadyMember: true };
+    }
+  }
+
   async requireMember(projectId: number, userId: number): Promise<ProjectMember> {
     const membership = await prisma.projectMember.findUnique({
       where: { projectId_userId: { projectId, userId } },

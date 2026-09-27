@@ -42,4 +42,16 @@ export const projectController = {
     );
     res.json({ success: true, data: { removed: true } });
   },
+  preview: async (req: Request, res: Response) => {
+    const data = await projectService.getProjectPreview(Number(req.params.projectId));
+    res.json({ success: true, data });
+  },
+  members: async (req: Request, res: Response) => {
+    const data = await projectService.getMembers(Number(req.params.projectId), req.user!.userId);
+    res.json({ success: true, data });
+  },
+  join: async (req: Request, res: Response) => {
+    const data = await projectService.joinProject(Number(req.params.projectId), req.user!.userId);
+    res.json({ success: true, data });
+  },
 };

@@ -206,7 +206,18 @@ All responses follow uniform envelope:
 | `PATCH` | `/projects/:id` | Update project |
 | `DELETE` | `/projects/:id` | Delete project |
 | `POST` | `/projects/:id/members` | Add member |
+| `GET` | `/projects/:id/members` | List members (members only) |
 | `DELETE` | `/projects/:id/members/:userId` | Remove member |
+| `GET` | `/projects/:id/preview` | Name, description, member count (any signed-in user) |
+| `POST` | `/projects/:id/join` | Join the project (any signed-in user) |
+
+> **Joining is open.** Any signed-in user may preview and join any project, and
+> project IDs are sequential integers. There is no invite code, visibility flag,
+> or privacy field in the schema, so membership is not a tenant boundary —
+> project isolation depends on nobody guessing an ID. This is deliberate for the
+> current build, and it is the first thing to change if projects ever hold data
+> that should not be mutually visible. Joining twice is idempotent, not a
+> conflict.
 
 ### Tasks
 | Method | Endpoint | Description |
@@ -347,6 +358,7 @@ bun run format
 - **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop not fully validated on all mobile browsers.
 - **Recomputation reads the whole graph**: Writes are limited to the changed tasks and their descendants, but every mutation still loads the project graph, so a mutation is O(V+E) to load even when it touches one task. Projects beyond a few thousand tasks would want caching or an incremental view.
 - **No project-wide reconciliation**: Because recomputation is descendant-scoped, drift that is not downstream of a change will not be corrected by later mutations. A repair path would have to recompute deliberately.
+- **Projects are open to any signed-in user**: preview and join need no invite, and IDs are sequential. Fine for a demo, wrong the moment two projects hold data that should stay separate.
 - **No multi-region Redis clustering** configured; single Redis instance used for Pub/Sub.
 - **Single worker process**: AI jobs are consumed by whichever API replica starts first. Running more than one replica is safe, but queue concurrency is per-replica and needs a look before scaling out.
 

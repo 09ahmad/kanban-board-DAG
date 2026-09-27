@@ -1,7 +1,7 @@
 # TaskFlow Pro — Test Suite
 
 ## Summary
-**133 tests pass · 0 fail** across 20 files. Numbers below are from a full
+**142 tests pass · 0 fail** across 21 files. Numbers below are from a full
 `bun test` run; regenerate rather than trusting them if they drift again.
 
 ## Engine Unit Tests (19 tests)
@@ -17,7 +17,7 @@ Pure functions, no I/O, no database.
 | `regression.test.ts` | 1 | A reverts to IN_PROGRESS; B and C become BLOCKED, status untouched |
 | `convergence.test.ts` | 1 | Diamond A→B, A→C, B→D, C→D; A shifts +3d; D shifts +3d exactly once |
 
-## Server Integration Tests (57 tests)
+## Server Integration Tests (66 tests)
 Drive the real Express app against a live PostgreSQL and Redis. **These truncate
 shared tables between files** — point `DATABASE_URL` at a scratch database.
 
@@ -31,6 +31,7 @@ shared tables between files** — point `DATABASE_URL` at a scratch database.
 | `readiness-scope.integration.test.ts` | 6 | Recomputation touches a change and its descendants, and nothing else |
 | `ai-provider.test.ts` | 12 | Bounded/timeout LLM call, request shape, candidate schema, degraded mode |
 | `ai-queue.integration.test.ts` | 13 | BullMQ job lifecycle, per-task dedupe, retries, failure isolation |
+| `project-membership.integration.test.ts` | 9 | Preview visibility, roster gating, idempotent join, unique-violation handling |
 
 ## Web App Tests (51 tests)
 Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
