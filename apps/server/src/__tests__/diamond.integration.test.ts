@@ -2,11 +2,13 @@ import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { createApp } from "../app.js";
 import type { Server } from "node:http";
 import { prisma } from "@repo/db/client";
+import { registerAndLogin, TestRun, uniqueEmail } from "./helpers/identity.js";
 
 let server: Server;
 let baseUrl: string;
 let token: string;
 let projectId: number;
+const run = new TestRun();
 
 function request(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${path}`, init);
@@ -15,11 +17,6 @@ function request(path: string, init?: RequestInit): Promise<Response> {
 beforeAll(async () => {
   await prisma.$connect();
 
-  // Cleanup test data
-  await prisma.task.deleteMany();
-  await prisma.projectMember.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.user.deleteMany();
 
   // Start the server on a random port
   const app = createApp();
@@ -28,26 +25,13 @@ beforeAll(async () => {
   const port = typeof addr === "string" ? 0 : (addr as any).port;
   baseUrl = `http://localhost:${port}`;
 
-  // Register and login a test user
-  await fetch(`${baseUrl}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "Diamond Test User",
-      email: "diamondtest@example.com",
-      password: "password123",
-    }),
-  });
-  const loginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: "diamondtest@example.com",
-      password: "password123",
-    }),
-  });
-  const loginBody = (await loginRes.json()) as { data: { token: string } };
-  token = loginBody.data.token;
+  const { token: signedIn, userId } = await registerAndLogin(
+    baseUrl,
+    "Diamond Test User",
+    uniqueEmail("diamond"),
+  );
+  run.track(userId);
+  token = signedIn;
 
   // Create a project
   const projRes = await request("/api/v1/projects", {
@@ -64,6 +48,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
+  await run.cleanup();
   await prisma.$disconnect();
 });
 

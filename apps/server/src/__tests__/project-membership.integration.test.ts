@@ -2,6 +2,7 @@ import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { createApp } from "../app.js";
 import type { Server } from "node:http";
 import { prisma } from "@repo/db/client";
+import { registerAndLogin, TestRun, uniqueEmail } from "./helpers/identity.js";
 
 let server: Server;
 let baseUrl: string;
@@ -9,6 +10,7 @@ let baseUrl: string;
 let ownerToken: string;
 let strangerToken: string;
 let projectId: number;
+const run = new TestRun();
 
 function request(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${baseUrl}${path}`, init);
@@ -25,28 +27,15 @@ function authed(token: string, init: RequestInit = {}): RequestInit {
   };
 }
 
-async function register(name: string, email: string): Promise<string> {
-  await request("/api/v1/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password: "password123" }),
-  });
-  const res = await request("/api/v1/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "password123" }),
-  });
-  const body = (await res.json()) as { data: { token: string } };
-  return body.data.token;
+/** A per-run user, tracked so the suite can remove exactly what it created. */
+async function register(name: string, prefix: string): Promise<string> {
+  const { token, userId } = await registerAndLogin(baseUrl, name, uniqueEmail(prefix));
+  run.track(userId);
+  return token;
 }
 
 beforeAll(async () => {
   await prisma.$connect();
-
-  await prisma.task.deleteMany();
-  await prisma.projectMember.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.user.deleteMany();
 
   const app = createApp();
   server = app.listen(0);
@@ -54,8 +43,8 @@ beforeAll(async () => {
   const port = typeof addr === "string" ? 0 : (addr as { port: number }).port;
   baseUrl = `http://localhost:${port}`;
 
-  ownerToken = await register("Owner", "owner@example.com");
-  strangerToken = await register("Stranger", "stranger@example.com");
+  ownerToken = await register("Owner", "owner");
+  strangerToken = await register("Stranger", "stranger");
 
   const projRes = await request("/api/v1/projects", authed(ownerToken, {
     method: "POST",
@@ -67,6 +56,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
+  await run.cleanup();
   await prisma.$disconnect();
 });
 
@@ -137,7 +127,7 @@ describe("joining a project", () => {
   // connection serialises the calls, so it pins the outcome rather than proving
   // the race is handled. The handler is covered by the idempotency test above.
   test("concurrent joins all succeed with exactly one insert", async () => {
-    const fresh = await register("Racer", "racer@example.com");
+    const fresh = await register("Racer", "racer");
     const projectRes = await request("/api/v1/projects", authed(ownerToken, {
       method: "POST",
       body: JSON.stringify({ name: "Race Project" }),

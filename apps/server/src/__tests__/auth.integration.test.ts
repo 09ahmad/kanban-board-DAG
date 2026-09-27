@@ -2,10 +2,16 @@ import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { createApp } from "../app.js";
 import type { Server } from "node:http";
 import { prisma } from "@repo/db/client";
+import { TestRun, uniqueEmail, userIdFromToken } from "./helpers/identity.js";
 
 let server: Server;
 let baseUrl: string;
 let token: string;
+
+// One address for the whole file, so the tests that register then log in share an
+// account while a second run of the suite starts clean.
+const email = uniqueEmail("auth");
+const run = new TestRun();
 
 function request(
   path: string,
@@ -25,6 +31,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
+  await run.cleanup();
   await prisma.$disconnect();
 });
 
@@ -35,7 +42,7 @@ describe("auth integration", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Test User",
-        email: "testuser@example.com",
+        email: email,
         password: "password123",
       }),
     });
@@ -45,8 +52,9 @@ describe("auth integration", () => {
     expect(body.data.user).toBeDefined();
     expect(body.data.token).toBeDefined();
     expect(body.data.user.passwordHash).toBeUndefined();
-    expect(body.data.user.email).toBe("testuser@example.com");
+    expect(body.data.user.email).toBe(email);
     token = body.data.token;
+    run.track(userIdFromToken(token));
   });
 
   test("register duplicate email returns 409", async () => {
@@ -55,7 +63,7 @@ describe("auth integration", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "Another User",
-        email: "testuser@example.com",
+        email: email,
         password: "password123",
       }),
     });
@@ -70,7 +78,7 @@ describe("auth integration", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: "testuser@example.com",
+        email: email,
         password: "wrongpassword",
       }),
     });
@@ -85,7 +93,7 @@ describe("auth integration", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email: "testuser@example.com",
+        email: email,
         password: "password123",
       }),
     });
@@ -103,7 +111,7 @@ describe("auth integration", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.data.email).toBe("testuser@example.com");
+    expect(body.data.email).toBe(email);
     expect(body.data.passwordHash).toBeUndefined();
   });
 

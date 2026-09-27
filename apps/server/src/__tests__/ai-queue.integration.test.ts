@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import type { RedisDomainEvent } from "@repo/types";
 import type { AiProvider } from "../lib/ai-provider.js";
 import { prisma } from "@repo/db/client";
+import { registerAndLogin, TestRun, uniqueEmail } from "./helpers/identity.js";
 import { aiQueue, AI_SUGGESTIONS_QUEUE, suggestionJobId, subscribeToProject, unsubscribeFromProject } from "@repo/queue";
 import { createApp } from "../app.js";
 import { setAiProvider } from "../services/ai.service.js";
@@ -25,6 +26,7 @@ let worker: { close: () => Promise<void> } | undefined;
 let baseUrl: string;
 let token: string;
 let projectId: number;
+const run = new TestRun();
 
 const TEST_TIMEOUT_MS = 20000;
 
@@ -111,11 +113,6 @@ beforeAll(async () => {
   // Start from a clean queue so a job left by another run cannot satisfy a poll.
   await resetQueue();
 
-  await prisma.task.deleteMany();
-  await prisma.projectMember.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.user.deleteMany();
-
   const app = createApp();
   server = app.listen(0);
   const addr = server.address();
@@ -124,18 +121,13 @@ beforeAll(async () => {
 
   worker = startAiSuggestionWorker();
 
-  await fetch(`${baseUrl}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "AI Queue User", email: "aiqueue@example.com", password: "password123" }),
-  });
-  const loginRes = await fetch(`${baseUrl}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "aiqueue@example.com", password: "password123" }),
-  });
-  const loginBody = (await loginRes.json()) as { data: { token: string } };
-  token = loginBody.data.token;
+  const { token: signedIn, userId } = await registerAndLogin(
+    baseUrl,
+    "AI Queue User",
+    uniqueEmail("aiqueue"),
+  );
+  run.track(userId);
+  token = signedIn;
 
   const projRes = await request("/api/v1/projects", authed({
     method: "POST",
@@ -149,6 +141,7 @@ afterAll(async () => {
   await worker?.close();
   server.close();
   setAiProvider(createAiProvider());
+  await run.cleanup();
   await prisma.$disconnect();
   await aiQueue.close();
 });
