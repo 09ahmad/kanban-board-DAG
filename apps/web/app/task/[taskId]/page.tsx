@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useToast } from "@/components/toaster";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { AddDependencyModal } from "@/components/kanban-board/add-dependency-modal";
 import type { TaskEventType } from "@repo/types";
 import { use } from "react";
 
@@ -64,6 +65,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [graph, setGraph] = useState<GraphData | null>(null);
+  const [showDependencyModal, setShowDependencyModal] = useState(false);
 
   const fetchTask = async () => {
     try {
@@ -118,6 +121,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
           if (t) dependentMap.set(t.id, t);
         }
       }
+      setGraph(graphData);
       setPrerequisites(nextPrereqs);
       setDependents(nextDependents);
       setPrereqTasks(prereqMap);
@@ -174,6 +178,24 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
     } catch (err: any) {
       toast({ type: "error", message: err?.error?.message ?? "Failed to remove dependency" });
     }
+  };
+
+  /**
+   * Adds an edge with this task as the dependent. The engine recomputes
+   * readiness and the scheduler, so the answer is whatever the server says —
+   * this only relays it. Both halves are re-read because a new prerequisite can
+   * change the task's own readiness and the list it is waiting on.
+   */
+  const handleAddDependency = async (prerequisiteTaskId: number) => {
+    const res = await apiClient(`/projects/${task?.projectId}/dependencies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prerequisiteTaskId, dependentTaskId: taskId }),
+    });
+    unwrapResponse(res);
+
+    toast({ type: "success", message: "Dependency added" });
+    await Promise.all([fetchTask(), fetchDependencies()]);
   };
 
   const handleWSEvent = useCallback((event: { type: TaskEventType; projectId: number; taskId?: number; payload: Record<string, unknown> }) => {
@@ -340,7 +362,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
 
         {/* Dependencies — Prerequisites */}
         <div className="space-y-4">
-          <h2 className="font-display text-[24px] text-ink">Prerequisites (waiting on)</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-[24px] text-ink">Prerequisites (waiting on)</h2>
+            <Button variant="secondary" size="sm" onClick={() => setShowDependencyModal(true)}>
+              Add Dependency
+            </Button>
+          </div>
           <div className="space-y-3">
             {prerequisites.length === 0 ? (
               <p className="text-body text-[14px] text-muted">
@@ -448,6 +475,16 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
           </div>
         </div>
       </div>
+
+      {showDependencyModal && graph && (
+        <AddDependencyModal
+          tasks={graph.tasks}
+          dependencies={graph.dependencies}
+          defaultDependentTaskId={taskId}
+          onClose={() => setShowDependencyModal(false)}
+          onAdd={handleAddDependency}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmingDelete}

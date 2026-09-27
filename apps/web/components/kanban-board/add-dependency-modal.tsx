@@ -12,6 +12,12 @@ interface AddDependencyModalProps {
   dependencies: TaskDependency[];
   onClose: () => void;
   onAdd: (prerequisiteTaskId: number, dependentTaskId: number) => Promise<void>;
+  /**
+   * Pre-fills the dependent side. Opened from a task's own page the dependent
+   * is never in question — it is the task you are looking at — so making the
+   * user re-pick what they just clicked on is noise.
+   */
+  defaultDependentTaskId?: number;
 }
 
 function getStatusLabel(status: TaskStatus): string {
@@ -32,9 +38,17 @@ function getReadinessBadgeVariant(readiness: "READY" | "BLOCKED"): "ready" | "bl
   return readiness === "READY" ? "ready" : "blocked";
 }
 
-export function AddDependencyModal({ tasks, dependencies, onClose, onAdd }: AddDependencyModalProps) {
+export function AddDependencyModal({
+  tasks,
+  dependencies,
+  onClose,
+  onAdd,
+  defaultDependentTaskId,
+}: AddDependencyModalProps) {
   const [prerequisiteTaskId, setPrerequisiteTaskId] = useState<number | "" >("");
-  const [dependentTaskId, setDependentTaskId] = useState<number | "" >("");
+  const [dependentTaskId, setDependentTaskId] = useState<number | "" >(
+    defaultDependentTaskId ?? ""
+  );
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
