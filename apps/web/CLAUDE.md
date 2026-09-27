@@ -93,6 +93,7 @@ Base URL `http://localhost:4000/api/v1` (`NEXT_PUBLIC_API_URL`). Every response 
 **Confirmed real endpoints**:
 ```
 POST   /auth/register              POST /auth/login          GET /auth/me
+POST   /auth/refresh            # reissue a session that has not lapsed yet
 POST   /projects                   GET  /projects            GET /projects/:projectId
 PATCH  /projects/:projectId        DELETE /projects/:projectId
 POST   /projects/:projectId/members            DELETE /projects/:projectId/members/:userId

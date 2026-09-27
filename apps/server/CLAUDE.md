@@ -23,7 +23,7 @@ It handles user authentication, project management, Kanban task movements, graph
    - 🚫 DO NOT use `Bun.serve()` or native Bun HTTP routers.
 2. **DAG Engine**: MUST live in `apps/server/src/engine/` as a pure TypeScript domain module (zero I/O dependencies). It is NOT a standalone server or separate workspace package.
 3. **Authentication**: MUST use **JSON Web Tokens (`jsonwebtoken`)** and **bcrypt** (`bcrypt` or `bcryptjs`).
-   - Endpoints: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`.
+   - Endpoints: `POST /api/v1/auth/register`, `POST /api/v1/auth/login`, `POST /api/v1/auth/logout`, `GET /api/v1/auth/me`, `POST /api/v1/auth/refresh`.
    - Never return `passwordHash` in API responses.
 4. **Validation**: MUST use **Zod** (`zod`) schemas imported from `@repo/types`.
 5. **Database Access**: MUST execute database operations through `@repo/db/client` singleton. Never write raw SQL.

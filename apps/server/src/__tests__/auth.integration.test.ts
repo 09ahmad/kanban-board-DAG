@@ -155,3 +155,64 @@ describe("auth integration", () => {
     expect(body.status).toBe("ok");
   });
 });
+
+describe("session refresh", () => {
+  /** A JWT payload, decoded but not verified: enough to read its claims. */
+  function claims(token: string): { userId: number; exp: number; iat: number } {
+    return JSON.parse(atob(token.split(".")[1]!));
+  }
+
+  test("extends a session that has not lapsed", async () => {
+    const res = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { token: string; user: { email: string; passwordHash?: string } };
+    };
+    expect(body.success).toBe(true);
+    expect(body.data.user.email).toBe(email);
+    expect(body.data.user.passwordHash).toBeUndefined();
+    // The same person, and the same account. Note the token is not asserted to
+    // differ: JWT claims have second resolution, so a renewal inside the same
+    // second is byte-identical to the original. What matters is that it works.
+    expect(claims(body.data.token).userId).toBe(claims(token).userId);
+
+    const meRes = await request("/api/v1/auth/me", {
+      headers: { Authorization: `Bearer ${body.data.token}` },
+    });
+    expect(meRes.status).toBe(200);
+  });
+
+  test("the renewed token lasts as long as a fresh login would", async () => {
+    const res = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await res.json()) as { data: { token: string } };
+
+    // The point of the endpoint: an extended session is not a shorter one.
+    const renewed = claims(body.data.token);
+    const original = claims(token);
+    expect(renewed.exp - renewed.iat).toBe(original.exp - original.iat);
+  });
+
+  test("refuses without a token", async () => {
+    const res = await request("/api/v1/auth/refresh", { method: "POST" });
+
+    expect(res.status).toBe(401);
+  });
+
+  test("refuses a token that is not a session at all", async () => {
+    const res = await request("/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { Authorization: "Bearer not.a.token" },
+    });
+
+    // Sliding sessions extend a live session; they are not a way past a lapsed one.
+    expect(res.status).toBe(401);
+  });
+});

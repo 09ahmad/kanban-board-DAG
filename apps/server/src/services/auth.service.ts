@@ -40,6 +40,27 @@ export class AuthService {
     return { user: omitHash(user), token };
   }
 
+  /**
+   * Extend a session that has not lapsed yet.
+   *
+   * There is no refresh token, so this is not rotation and there is no
+   * revocation story: it trades that for a session that does not expire while
+   * someone is actually using the board. The current token has to still be
+   * valid, which is the point — a lapsed session has to sign in again, and this
+   * endpoint is not a way around that.
+   *
+   * The user is re-read rather than trusted from the token, so a session cannot
+   * outlive the account it belongs to.
+   */
+  async refresh(userId: number): Promise<{ user: SafeUser; token: string }> {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new AuthenticationError("This account no longer exists.");
+    }
+    const token = signToken({ userId: user.id, email: user.email });
+    return { user: omitHash(user), token };
+  }
+
   async login(dto: LoginDto): Promise<{ user: SafeUser; token: string }> {
     const user = await prisma.user.findUnique({ where: { email: dto.email } });
     if (!user) {

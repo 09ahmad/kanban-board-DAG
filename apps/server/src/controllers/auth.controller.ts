@@ -10,6 +10,10 @@ export const authController = {
     const data = await authService.login(req.body);
     res.status(200).json({ success: true, data });
   },
+  refresh: async (req: Request, res: Response) => {
+    const data = await authService.refresh(req.user!.userId);
+    res.status(200).json({ success: true, data });
+  },
   logout: async (_req: Request, res: Response) => {
     res.status(200).json({ success: true, data: { loggedOut: true } });
   },

@@ -77,10 +77,10 @@ as a description of the current tree.
 
 ## Known limitations (see `docs/ARCHITECTURE.md` §4 for the full list)
 - Auth uses `localStorage` JWT (documented simplification, not production-grade).
-  There is no refresh-token rotation: an expired token means logging in again, and
-  the client clears the session and redirects rather than silently retrying. The
-  lifetime is therefore the whole session, so it is configurable via
-  `JWT_EXPIRES_IN` and defaults to 30 days.
+  There is no refresh-token rotation and therefore no server-side revocation: a
+  token that has not yet expired can be reissued, and one that has cannot. The
+  lifetime is configurable via `JWT_EXPIRES_IN` and defaults to 30 days, and the
+  client slides it forward while in use.
 - Anything published while a socket was down is lost for that client, so a
   reconnect refetches instead of assuming the stream was complete.
 - AI degrades gracefully when the LLM is unavailable; the run is executed by a
@@ -97,9 +97,16 @@ Verified against the code on 2026-09-27, from the audit's section 6:
 | # | Item | Notes |
 |---|------|-------|
 | 1 | Loading skeletons | Spinners only. Not a correctness issue. |
-| 2 | Token refresh / session management | Not needed for the stated scope: the login lasts 30 days and is configurable, so a lapse means signing in again. Full rotation would still need a refresh endpoint and revocation story, which is a larger change than the audit asked for. |
 
 Resolved since the audit list was written:
+
+- **Token refresh and session management.** The login lasts 30 days and
+  `POST /auth/refresh` reissues it while it is still valid, so an active session
+  slides instead of lapsing mid-week; the client extends on load and when a
+  backgrounded tab comes back. This is deliberately not refresh-token rotation:
+  nothing is stored beyond the one token, so there is no revocation story. A
+  session that has already lapsed cannot be renewed and must sign in again, which
+  is the intended behaviour rather than an oversight.
 
 - **Deleting a dependency asks first.** Both places that remove an edge — the
   board's dependency list and a task's own page — go through `ConfirmDialog`, and

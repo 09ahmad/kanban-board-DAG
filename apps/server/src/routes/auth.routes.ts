@@ -11,3 +11,4 @@ authRouter.post("/register", validate(RegisterSchema), asyncHandler(authControll
 authRouter.post("/login", validate(LoginSchema), asyncHandler(authController.login));
 authRouter.post("/logout", authMiddleware, asyncHandler(authController.logout));
 authRouter.get("/me", authMiddleware, asyncHandler(authController.me));
+authRouter.post("/refresh", authMiddleware, asyncHandler(authController.refresh));

@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode, useContext } from "react";
 import { apiClient, unwrapResponse } from "@/lib/api-client";
+import { isExpired, needsRefresh } from "@/lib/session";
 
 interface AuthContextValue {
   user: User | null;
@@ -32,6 +33,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Trade a token that is close to lapsing for a fresh one, while it is still
+   * good enough for the server to accept.
+   *
+   * This is a sliding session, not a refresh token: nothing is stored beyond the
+   * one token, nothing is revoked, and a session that has already lapsed cannot
+   * be revived here. What it buys is that someone using the board all week is not
+   * signed out on Friday because the login was issued on Monday.
+   */
+  const extendSession = useCallback(async (current: string): Promise<string> => {
+    try {
+      const res = await apiClient<AuthResponse>("/auth/refresh", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${current}` },
+      });
+      const { token: renewed } = unwrapResponse(res);
+      localStorage.setItem("jwt_token", renewed);
+      return renewed;
+    } catch {
+      // The server refused, so this session is finished. Leave the stored token
+      // alone and let the caller's own error handling decide what that means.
+      return current;
+    }
+  }, []);
+
   const refreshMe = useCallback(async () => {
     const t = typeof window !== "undefined" ? localStorage.getItem("jwt_token") : null;
     if (!t) {
@@ -42,6 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(t);
     try {
+      // Nothing to extend if it has already lapsed; go straight to finding out
+      // whether the session is gone, which is one request either way.
+      const live = isExpired(t) ? t : needsRefresh(t) ? await extendSession(t) : t;
+      setToken(live);
       const res = await apiClient<User>("/auth/me");
       setUser(unwrapResponse(res));
     } catch {
@@ -51,11 +81,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [extendSession]);
 
   useEffect(() => {
     refreshMe();
   }, [refreshMe]);
+
+  useEffect(() => {
+    if (!token || typeof document === "undefined") return;
+
+    /**
+     * A tab left open overnight is the case sliding sessions exist for: the
+     * token was fine when the page loaded and is not by the time someone comes
+     * back to it. `visibilitychange` catches that without polling, and without a
+     * request on every page the user never returns to.
+     */
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (isExpired(token) || !needsRefresh(token)) return;
+      void extendSession(token).then(setToken);
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [token, extendSession]);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await apiClient<AuthResponse>("/auth/login", {
