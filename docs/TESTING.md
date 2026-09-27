@@ -1,7 +1,7 @@
 # TaskFlow Pro — Test Suite
 
 ## Summary
-**161 tests pass · 0 fail** across 23 files. Numbers below are from a full
+**195 tests pass · 0 fail** across 26 files. Numbers below are from a full
 `bun test` run; regenerate rather than trusting them if they drift again.
 
 ## Engine Unit Tests (19 tests)
@@ -17,9 +17,10 @@ Pure functions, no I/O, no database.
 | `regression.test.ts` | 1 | A reverts to IN_PROGRESS; B and C become BLOCKED, status untouched |
 | `convergence.test.ts` | 1 | Diamond A→B, A→C, B→D, C→D; A shifts +3d; D shifts +3d exactly once |
 
-## Server Integration Tests (66 tests)
-Drive the real Express app against a live PostgreSQL and Redis. **These truncate
-shared tables between files** — point `DATABASE_URL` at a scratch database.
+## Server Tests (75 tests)
+Drive the real Express app against a live PostgreSQL and Redis. **Most of these
+truncate shared tables between files** — point `DATABASE_URL` at a scratch
+database, or running the suite will delete whatever else is in it.
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -27,29 +28,41 @@ shared tables between files** — point `DATABASE_URL` at a scratch database.
 | `dependency.integration.test.ts` | 5 | CRUD, cycle detection, graph, critical path, events |
 | `task-move.integration.test.ts` | 2 | BLOCKED guard and readiness |
 | `diamond.integration.test.ts` | 2 | Compounding math and regression |
-| `event-publishing.integration.test.ts` | 7 | Downstream events reach Redis Pub/Sub after commit |
+| `event-publishing.integration.test.ts` | 11 | Downstream events after commit, and who caused them |
 | `readiness-scope.integration.test.ts` | 6 | Recomputation touches a change and its descendants, and nothing else |
 | `ai-provider.test.ts` | 12 | Bounded/timeout LLM call, request shape, candidate schema, degraded mode |
 | `ai-queue.integration.test.ts` | 13 | BullMQ job lifecycle, per-task dedupe, retries, failure isolation |
 | `project-membership.integration.test.ts` | 9 | Preview visibility, roster gating, idempotent join, unique-violation handling |
 
-## Web App Tests (70 tests)
+| File | Tests | Coverage |
+|------|-------|----------|
+| `config/__tests__/env.test.ts` | 5 | JWT lifetime default, blank fallback, configured duration, trimming |
+
+## Web App Tests (95 tests)
 Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `components/kanban-board/__tests__/board.test.tsx` | 19 | Columns, cards, drag-and-drop, dependency signals |
+| `components/kanban-board/__tests__/board.test.tsx` | 20 | Columns, cards, drag-and-drop, dependency signals |
 | `components/__tests__/confirm-dialog.test.tsx` | 7 | Consequence copy, confirm, cancel, Escape, backdrop, in-flight lockout |
+| `components/kanban-board/__tests__/add-dependency-modal.test.tsx` | 7 | Pick a prerequisite, duplicate and self edges, cycle rejection, preselection |
 | `hooks/__tests__/use-board.test.ts` | 9 | Optimistic updates and rollback |
-| `hooks/__tests__/use-websocket.test.ts` | 15 | Reconnect backoff, resync on reconnect, URL resolution |
+| `hooks/__tests__/use-websocket.test.ts` | 21 | Reconnect backoff, resync on reconnect, URL resolution, teammate-only notifications |
 | `hooks/__tests__/use-ai-suggestions.test.ts` | 8 | Polling lifecycle, accept, reject |
 | `lib/__tests__/api-client.test.ts` | 12 | Envelope unwrapping, empty and non-JSON bodies, status-derived errors, 401 handling, redirect suppression |
+| `lib/__tests__/remote-activity.test.ts` | 11 | Wording per event, own and actor-less silence, burst collapsing |
 
 Two hook suites stub `globalThis.fetch` rather than mocking `@/lib/api-client`
 with `mock.module`. A `mock.module` in Bun is global and permanent for the
 process, so it silently replaced the real client for every suite that ran
 afterwards; the fetch stub puts the real client, envelope unwrapping included,
 under test instead.
+
+`use-websocket.test.ts` is the one suite that does mock modules, for the toaster
+and the auth context. That is safe only because nothing running after it needs
+either for real, and it imports its subject *after* the mocks — a static import
+at the top would capture the real ones. Treat a new mock in that file as a
+constraint on later suites, not a local convenience.
 
 These suites avoid testing-library's `screen` and query within the rendered
 tree: `screen` binds to `document.body` at import time, which happy-dom does
@@ -70,7 +83,8 @@ Bun runs these files in one process, so a leak in one is a failure in another.
 Two that have bitten:
 
 - `mock.module` is global and permanent. Suites inject a fake AI provider
-  through `setAiProvider` instead of module mocking.
+  through `setAiProvider` instead of module mocking, and the WebSocket hook suite
+  mocks only the toaster and auth context, which nothing after it needs.
 - A suite that installs happy-dom replaces the global `fetch` with one that
   refuses cross-origin requests, which breaks any other suite calling a
   different origin. The WebSocket server tests use `node:http` directly.

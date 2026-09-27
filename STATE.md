@@ -6,7 +6,7 @@ All verification passes:
 - `bun run build` ✓ (Turbopack)
 - `bun run check-types` ✓ (all 6 packages)
 - `bun run lint` ✓ (0 warnings)
-- `bun test` ✓ (169 pass, 0 fail, 24 files)
+- `bun test` ✓ (195 pass, 0 fail, 26 files)
 
 Feature-complete against the audit list except the items under **Open work** below.
 Counts and inventories here were regenerated from the tree on 2026-09-27; if they
@@ -70,11 +70,16 @@ as a description of the current tree.
 - `docker compose config -q` validates; the web image is built with
   `API_INTERNAL_URL` / `WS_INTERNAL_URL` baked in at build time
 - `.env` is gitignored; `.env.example` has no real secrets
+- Most server integration suites truncate shared tables, so `bun test` needs
+  `DATABASE_URL` pointed at a scratch database. Against the development database
+  it will delete whatever is in it, including anything a local server is using.
 
 ## Known limitations (see `docs/ARCHITECTURE.md` §4 for the full list)
 - Auth uses `localStorage` JWT (documented simplification, not production-grade).
   There is no refresh-token rotation: an expired token means logging in again, and
-  the client clears the session and redirects rather than silently retrying.
+  the client clears the session and redirects rather than silently retrying. The
+  lifetime is therefore the whole session, so it is configurable via
+  `JWT_EXPIRES_IN` and defaults to 30 days.
 - Anything published while a socket was down is lost for that client, so a
   reconnect refetches instead of assuming the stream was complete.
 - AI degrades gracefully when the LLM is unavailable; the run is executed by a
@@ -90,9 +95,22 @@ Verified still open against the code on 2026-09-27, from the audit's section 6:
 
 | # | Item | Notes |
 |---|------|-------|
-| 1 | Toast notifications for updates made by *other* clients | Toasts fire for local actions only. `DEPENDENCY_ADDED` / `TASK_MOVED` from another tab are applied silently. Note the blocker: the WebSocket broadcast (`WsEventBroadcast`) carries no `actorId` — only the persisted `TaskEvent` does — so the client cannot currently tell whose change arrived. Doing this properly means threading the actor through the two services and the event contract first, and deciding how chatty it should be. |
-| 2 | Loading skeletons | Spinners only. Not a correctness issue. |
-| 3 | Token refresh / session management | Needs a refresh endpoint and rotation, not a frontend change alone. |
+| 1 | Loading skeletons | Spinners only. Not a correctness issue. |
+| 2 | Token refresh / session management | Not needed for the stated scope: the login lasts 30 days and is configurable, so a lapse means signing in again. Full rotation would still need a refresh endpoint and revocation story, which is a larger change than the audit asked for. |
+| 3 | Deleting a dependency asks first | A task's page confirms before deleting the task, and a project confirms before deletion, but removing a single dependency edge still happens immediately. `ConfirmDialog` already covers the case. |
+
+Resolved since the audit list was written:
+
+- **Toast notifications for updates made by other clients.** `WsEventBroadcast`
+  now carries `actorId`, threaded through the task and dependency services
+  including the events the engine derives as consequences, so the client can
+  credit the person whose change blocked a task. Events with no actor are work
+  with no human behind it, such as the AI worker, and are never announced. The
+  socket speaks for other people only and batches, so dragging a card across
+  three columns produces one line rather than three, and it stays silent when
+  nobody is signed in to compare against. The wording lives in
+  `apps/web/lib/remote-activity.ts`, apart from the socket so it is testable
+  without a DOM.
 
 Fixed but not covered by an automated test, for the record:
 
