@@ -1,5 +1,5 @@
 import "../../happydom";
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, beforeEach, afterAll } from "bun:test";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import type { Task, TaskStatus, ReadinessState } from "@repo/types";
 
@@ -27,28 +27,39 @@ const toasts: { type: string; message: string }[] = [];
 let graphTasks: Task[] = [];
 let moveShouldFail = false;
 
-const apiMock = mock(async (endpoint: string, options: RequestInit = {}) => {
-  if (endpoint.endsWith("/graph")) {
-    return { success: true as const, data: { tasks: graphTasks, dependencies: [] } };
+const realFetch = globalThis.fetch;
+
+/**
+ * Stub the network, not the client. A `mock.module` of the api-client is global
+ * for the rest of the process, so a later suite that needs the real client
+ * silently gets this fake instead.
+ */
+function jsonResponse(payload: unknown, status: number): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+globalThis.fetch = (async (input: string | URL | Request) => {
+  const endpoint = String(input);
+  if (endpoint.includes("/graph")) {
+    return jsonResponse({ success: true, data: { tasks: graphTasks, dependencies: [] } }, 200);
   }
   if (endpoint.includes("/move")) {
     if (moveShouldFail) {
-      throw { success: false, error: { code: "TASK_IS_BLOCKED", message: "Task is blocked" } };
+      return jsonResponse(
+        { success: false, error: { code: "TASK_IS_BLOCKED", message: "Task is blocked" } },
+        400,
+      );
     }
-    return { success: true as const, data: {} };
+    return jsonResponse({ success: true, data: {} }, 200);
   }
-  return { success: true as const, data: {} };
-});
+  return jsonResponse({ success: true, data: {} }, 200);
+}) as unknown as typeof fetch;
 
-mock.module("@/lib/api-client", () => ({
-  apiClient: apiMock,
-  unwrapResponse: (res: any) => {
-    if (!res.success) throw res.error;
-    return res.data;
-  },
-  isErrorResponse: (res: any) => !res.success,
-}));
-
+// Still mocked globally: no suite asserts on the real toaster, so unlike the
+// api-client mock above this one cannot break a sibling.
 mock.module("@/components/toaster", () => ({
   useToast: () => ({
     toasts: [],
@@ -71,7 +82,10 @@ beforeEach(() => {
   toasts.length = 0;
   moveShouldFail = false;
   graphTasks = [];
-  apiMock.mockClear();
+});
+
+afterAll(() => {
+  globalThis.fetch = realFetch;
 });
 
 describe("useBoard optimistic updates", () => {

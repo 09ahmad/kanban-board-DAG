@@ -1,25 +1,33 @@
 import "../../happydom";
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, afterAll } from "bun:test";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 
 /** What the API answers with, keyed by endpoint substring. */
 const routes: { match: string; payload: unknown }[] = [];
 const calls: string[] = [];
 
-const apiMock = mock(async (endpoint: string) => {
+const realFetch = globalThis.fetch;
+
+/**
+ * Stub the network, not the client. A `mock.module` of the api-client would be
+ * global for the rest of the process, and any suite that needs the real client
+ * would then get this one instead.
+ */
+globalThis.fetch = (async (input: string | URL | Request) => {
+  const endpoint = String(input);
   calls.push(endpoint);
   const hit = routes.find((r) => endpoint.includes(r.match));
-  if (!hit) throw { success: false, error: { code: "NOT_FOUND", message: "no route" } };
-  return { success: true, data: hit.payload };
-});
-
-mock.module("@/lib/api-client", () => ({
-  apiClient: apiMock,
-  unwrapResponse: (res: any) => {
-    if (!res.success) throw res.error;
-    return res.data;
-  },
-}));
+  if (!hit) {
+    return new Response(JSON.stringify({ success: false, error: { code: "NOT_FOUND", message: "no route" } }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return new Response(JSON.stringify({ success: true, data: hit.payload }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}) as unknown as typeof fetch;
 
 const { useAiSuggestions } = await import("../use-ai-suggestions");
 
@@ -37,7 +45,10 @@ function serveRun(run: { suggestions: unknown[]; status: string }): void {
 beforeEach(() => {
   routes.length = 0;
   calls.length = 0;
-  apiMock.mockClear();
+});
+
+afterAll(() => {
+  globalThis.fetch = realFetch;
 });
 
 afterEach(() => {
@@ -62,7 +73,7 @@ describe("useAiSuggestions", () => {
     });
 
     // The POST returns a job reference; the answer arrives by polling.
-    expect(calls[0]).toBe("/projects/1/ai/dependency-suggestions");
+    expect(calls[0]).toContain("/projects/1/ai/dependency-suggestions");
     await waitFor(() => expect(result.current.busy).toBe(true));
   });
 
