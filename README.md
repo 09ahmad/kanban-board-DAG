@@ -1,5 +1,7 @@
 # TaskFlow Pro
 
+![TaskFlow Pro — demo walkthrough](docs/assets/demo.mp4)
+
 A Kanban project management web app for engineering/product teams who plan work as dependency chains (e.g. integration tests can't start until backend API is done). Responsive, desktop-first but usable on tablet/mobile.
 
 ## Problem Statement
