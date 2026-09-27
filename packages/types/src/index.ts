@@ -30,6 +30,7 @@ export interface Task {
   description?: string | null;
   status: TaskStatus;
   readiness: ReadinessState;
+  assigneeId?: number | null;
   plannedStart?: Date | null;
   duration?: number | null;
   computedStart?: Date | null;

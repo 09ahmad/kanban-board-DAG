@@ -72,6 +72,7 @@ model User {
   memberships         ProjectMember[]
   taskEvents          TaskEvent[]    @relation("EventActor")
   suggestionDecisions AiSuggestion[] @relation("SuggestionDecidedBy")
+  assignedTasks       Task[]         @relation("TaskAssignee")
 
   @@map("users")
 }
@@ -131,6 +132,10 @@ model Task {
 
   /// Kanban ordering within a status column.
   position Int @default(0)
+
+  /// Project member this task is assigned to.
+  assigneeId Int?
+  assignee   User? @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
 
   // Scheduling
   /// User-provided desired/earliest start date.

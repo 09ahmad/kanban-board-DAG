@@ -30,6 +30,12 @@ export const MoveTaskSchema = z.object({
 
 export type MoveTaskDto = z.infer<typeof MoveTaskSchema>;
 
+export const AssignTaskSchema = z.object({
+  assigneeId: z.number().int().positive().nullable(),
+});
+
+export type AssignTaskDto = z.infer<typeof AssignTaskSchema>;
+
 export const TaskIdParamsSchema = z.object({
   taskId: z.coerce.number().int().positive(),
 });

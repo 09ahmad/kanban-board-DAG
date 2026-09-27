@@ -1,6 +1,6 @@
 import { prisma } from "@repo/db/client";
 import { publishDomainEvent } from "@repo/queue";
-import type { CreateTaskDto, MoveTaskDto, TaskEventType, UpdateTaskDto } from "@repo/types";
+import type { AssignTaskDto, CreateTaskDto, MoveTaskDto, TaskEventType, UpdateTaskDto } from "@repo/types";
 import {
   computeDownstreamReadiness,
   computeSchedule,
@@ -184,6 +184,31 @@ export class TaskService {
     );
     await this._emitPending(task.projectId, pending);
     return moved;
+  }
+
+  async assignTask(taskId: number, dto: AssignTaskDto, userId: number): Promise<Task> {
+    const task = await this.getTask(taskId, userId);
+    if (dto.assigneeId !== null) {
+      await projectService.requireMember(task.projectId, dto.assigneeId);
+    }
+    const assigned = await prisma.$transaction(async (tx) => {
+      const updated = await tx.task.update({
+        where: { id: taskId },
+        data: { assigneeId: dto.assigneeId, version: { increment: 1 } },
+      });
+      await tx.taskEvent.create({
+        data: {
+          projectId: task.projectId,
+          taskId,
+          actorId: userId,
+          type: "TASK_UPDATED",
+          payload: { assigneeId: dto.assigneeId } as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
+    });
+    await this._emit("TASK_UPDATED", task.projectId, taskId, { assigneeId: dto.assigneeId }, userId);
+    return assigned;
   }
 
   async deleteTask(taskId: number, userId: number): Promise<void> {
