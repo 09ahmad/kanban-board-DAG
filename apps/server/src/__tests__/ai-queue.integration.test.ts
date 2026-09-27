@@ -3,17 +3,11 @@ import type { Server } from "node:http";
 import type { RedisDomainEvent } from "@repo/types";
 import type { AiProvider } from "../lib/ai-provider.js";
 import { prisma } from "@repo/db/client";
-
-// A running dev server shares Redis, and its worker would take these jobs —
-// with a real LLM behind it. Give the suite a queue nobody else listens on.
-process.env.AI_SUGGESTIONS_QUEUE = "ai-suggestions-test";
-const { aiQueue, AI_SUGGESTIONS_QUEUE, suggestionJobId, subscribeToProject, unsubscribeFromProject } =
-  await import("@repo/queue");
-
-const { createApp } = await import("../app.js");
-const { setAiProvider } = await import("../services/ai.service.js");
-const { createAiProvider } = await import("../lib/ai-provider.js");
-const { startAiSuggestionWorker } = await import("../workers/ai-suggestion.worker.js");
+import { aiQueue, AI_SUGGESTIONS_QUEUE, suggestionJobId, subscribeToProject, unsubscribeFromProject } from "@repo/queue";
+import { createApp } from "../app.js";
+import { setAiProvider } from "../services/ai.service.js";
+import { createAiProvider } from "../lib/ai-provider.js";
+import { startAiSuggestionWorker } from "../workers/ai-suggestion.worker.js";
 
 /** What the stubbed model is allowed to answer with. */
 let candidates: { prerequisiteTaskId: number; confidence: number; reason?: string }[] = [];

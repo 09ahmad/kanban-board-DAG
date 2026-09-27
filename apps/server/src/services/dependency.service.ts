@@ -69,7 +69,7 @@ export class DependencyService {
           payload: dto as Prisma.InputJsonValue,
         },
       });
-      pending = await taskService._recomputeProject(tx, projectId, userId);
+      pending = await taskService._recomputeProject(tx, projectId, userId, [dto.dependentTaskId]);
       return this._snapshot(tx, projectId);
     });
 
@@ -103,7 +103,7 @@ export class DependencyService {
           } as Prisma.InputJsonValue,
         },
       });
-      pending = await taskService._recomputeProject(tx, projectId, userId);
+      pending = await taskService._recomputeProject(tx, projectId, userId, [dep.dependentTaskId]);
     });
     await this._emit("DEPENDENCY_REMOVED", projectId, dep.dependentTaskId, {
       dependencyId,

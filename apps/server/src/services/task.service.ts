@@ -2,7 +2,7 @@ import { prisma } from "@repo/db/client";
 import { publishDomainEvent } from "@repo/queue";
 import type { CreateTaskDto, MoveTaskDto, TaskEventType, UpdateTaskDto } from "@repo/types";
 import {
-  computeReadiness,
+  computeDownstreamReadiness,
   computeSchedule,
   topologicalSort,
   type GraphEdge,
@@ -128,7 +128,7 @@ export class TaskService {
         dto.duration !== undefined ||
         dto.status !== undefined
       ) {
-        pending = await this._recomputeProject(tx, existing.projectId, userId);
+        pending = await this._recomputeProject(tx, existing.projectId, userId, [taskId]);
       }
       await tx.taskEvent.create({
         data: {
@@ -161,7 +161,7 @@ export class TaskService {
           version: { increment: 1 },
         },
       });
-      pending = await this._recomputeProject(tx, task.projectId, userId);
+      pending = await this._recomputeProject(tx, task.projectId, userId, [taskId]);
       await tx.taskEvent.create({
         data: {
           projectId: task.projectId,
@@ -185,8 +185,19 @@ export class TaskService {
     const task = await this.getTask(taskId, userId);
     let pending: PendingGraphEvent[] = [];
     await prisma.$transaction(async (tx) => {
+      // The edges go with the task, so its dependents are read first: they are
+      // the only tasks whose derived state can have changed.
+      const dependents = await tx.taskDependency.findMany({
+        where: { prerequisiteTaskId: taskId },
+        select: { dependentTaskId: true },
+      });
       await tx.task.delete({ where: { id: taskId } });
-      pending = await this._recomputeProject(tx, task.projectId, userId);
+      pending = await this._recomputeProject(
+        tx,
+        task.projectId,
+        userId,
+        dependents.map((d) => d.dependentTaskId),
+      );
       await tx.taskEvent.create({
         data: {
           projectId: task.projectId,
@@ -242,31 +253,45 @@ export class TaskService {
     }
   }
 
+  /**
+   * Recomputes the changed tasks and everything downstream of them.
+   *
+   * Readiness and dates only propagate along the dependency direction, so no
+   * task outside that closure can have changed. Rewriting the rest of the
+   * project would bump `version` and emit schedule events for tasks nobody
+   * touched.
+   */
   async _recomputeProject(
     tx: Tx,
     projectId: number,
-    actorId?: number,
+    actorId: number | undefined,
+    changedTaskIds: number[],
   ): Promise<PendingGraphEvent[]> {
     const { tasks, edges } = await this._loadGraph(projectId, tx);
     const list = [...tasks.values()];
-    const ids = list.map((t) => t.id);
-    const readiness = computeReadiness(list, edges);
-    const order = topologicalSort(ids, edges);
+    const readiness = computeDownstreamReadiness(list, edges, changedTaskIds);
+    if (readiness.size === 0) return [];
+
+    const order = topologicalSort(
+      list.map((t) => t.id),
+      edges,
+    );
     const schedule = computeSchedule(list, edges, order);
     const updates = new Map<
       number,
       { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date }
     >();
     const pending: PendingGraphEvent[] = [];
-    for (const task of list) {
-      const nextReady = readiness.get(task.id);
-      const nextSched = schedule.get(task.id);
-      const readyChanged = nextReady && nextReady !== task.readiness;
+    for (const [id, nextReady] of readiness) {
+      const task = tasks.get(id);
+      if (!task) continue;
+      const nextSched = schedule.get(id);
+      const readyChanged = nextReady !== task.readiness;
       const startChanged =
         nextSched?.computedStart?.getTime() !== task.computedStart?.getTime();
       const endChanged = nextSched?.computedEnd?.getTime() !== task.computedEnd?.getTime();
       if (readyChanged || startChanged || endChanged) {
-        updates.set(task.id, {
+        updates.set(id, {
           readiness: nextReady,
           computedStart: nextSched?.computedStart,
           computedEnd: nextSched?.computedEnd,
