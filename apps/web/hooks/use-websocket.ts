@@ -16,6 +16,21 @@ export function reconnectDelay(attempt: number): number {
   return Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
 }
 
+/**
+ * The browser WebSocket constructor rejects relative URLs, so a same-origin
+ * path — which is what the Docker image ships, to keep the browser on one
+ * origin — has to be resolved against the page first.
+ */
+export function resolveWebSocketUrl(
+  configured: string | undefined,
+  origin: { protocol: string; host: string } = window.location
+): string {
+  const raw = configured || "ws://localhost:4001";
+  if (/^wss?:\/\//i.test(raw)) return raw;
+  const scheme = origin.protocol === "https:" ? "wss:" : "ws:";
+  return `${scheme}//${origin.host}${raw.startsWith("/") ? raw : `/${raw}`}`;
+}
+
 export function useWebSocket(
   projectId: number,
   onEvent: (event: WSEvent) => void,
@@ -40,7 +55,7 @@ export function useWebSocket(
     if (!projectId || projectId <= 0) return;
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
+    const wsUrl = resolveWebSocketUrl(process.env.NEXT_PUBLIC_WS_URL);
     try {
       const ws = new WebSocket(`${wsUrl}?projectId=${projectId}`);
 

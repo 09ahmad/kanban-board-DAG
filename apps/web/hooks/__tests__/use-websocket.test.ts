@@ -1,6 +1,7 @@
 import "../../happydom";
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
+import { resolveWebSocketUrl } from "../use-websocket";
 
 /** Minimal stand-in for the browser WebSocket, driven by the test. */
 class FakeWebSocket {
@@ -80,6 +81,35 @@ describe("reconnect backoff", () => {
   test("the delay is capped so a long outage still retries", () => {
     expect(reconnectDelay(6)).toBe(30000);
     expect(reconnectDelay(20)).toBe(30000);
+  });
+});
+
+describe("resolveWebSocketUrl", () => {
+  const http = { protocol: "http:", host: "localhost:3000" };
+  const https = { protocol: "https:", host: "taskflow.example" };
+
+  test("passes an absolute URL through", () => {
+    expect(resolveWebSocketUrl("ws://localhost:4001", http)).toBe("ws://localhost:4001");
+    expect(resolveWebSocketUrl("wss://live.example/ws", https)).toBe("wss://live.example/ws");
+  });
+
+  test("resolves the same-origin path the Docker image ships", () => {
+    // The browser WebSocket constructor throws on a relative URL, so leaving
+    // this one alone would break every deployed socket.
+    expect(resolveWebSocketUrl("/ws", http)).toBe("ws://localhost:3000/ws");
+  });
+
+  test("upgrades to wss on a secure page", () => {
+    expect(resolveWebSocketUrl("/ws", https)).toBe("wss://taskflow.example/ws");
+  });
+
+  test("adds a missing leading slash", () => {
+    expect(resolveWebSocketUrl("ws", http)).toBe("ws://localhost:3000/ws");
+  });
+
+  test("falls back to the local dev server when unconfigured", () => {
+    expect(resolveWebSocketUrl(undefined, http)).toBe("ws://localhost:4001");
+    expect(resolveWebSocketUrl("", http)).toBe("ws://localhost:4001");
   });
 });
 

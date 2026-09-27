@@ -1,8 +1,7 @@
 import "dotenv/config";
-import { WebSocketServer } from "ws";
 import { Redis } from "ioredis";
 import { connectionManager } from "./manager.js";
-import { handleClientMessage } from "./handlers.js";
+import { createWsServer } from "./server.js";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +18,7 @@ const redisSub = new Redis(REDIS_URL, {
   maxRetriesPerRequest: null,
 });
 
-const wss = new WebSocketServer({ port: WS_PORT });
+const server = createWsServer(WS_PORT);
 
 async function start() {
   await redisSub.connect();
@@ -33,27 +32,12 @@ async function start() {
     }
   });
 
-  wss.on("connection", (ws) => {
-    ws.on("message", (data) => {
-      handleClientMessage(ws, data.toString());
-    });
-
-    ws.on("close", () => {
-      connectionManager.remove(ws);
-    });
-
-    ws.on("error", (err) => {
-      console.error("WS error:", err);
-      connectionManager.remove(ws);
-    });
-  });
-
   console.log(`WebSocket server listening on :${WS_PORT}`);
 }
 
 async function shutdown() {
   console.log("Shutting down WebSocket server...");
-  wss.close();
+  await server.close();
   await redisSub.disconnect();
   process.exit(0);
 }

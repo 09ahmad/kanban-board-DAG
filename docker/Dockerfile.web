@@ -5,6 +5,11 @@ FROM oven/bun:1.2-alpine AS builder
 # Build args for Next.js public env vars (embedded at build time)
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_WS_URL
+# Rewrite destinations are baked into routes-manifest.json by `next build`,
+# so the in-network addresses of the API and WebSocket services must be known
+# here rather than at container start.
+ARG API_INTERNAL_URL
+ARG WS_INTERNAL_URL
 
 # Install system dependencies
 RUN apk add --no-cache python3 make g++
@@ -32,7 +37,7 @@ COPY apps/web ./apps/web
 
 # Build the web app with standalone output
 WORKDIR /app/apps/web
-RUN NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL} bunx next build --output=standalone
+RUN NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL} API_INTERNAL_URL=${API_INTERNAL_URL} WS_INTERNAL_URL=${WS_INTERNAL_URL} bunx next build --output=standalone
 
 # Production stage
 FROM oven/bun:1.2-alpine AS production
