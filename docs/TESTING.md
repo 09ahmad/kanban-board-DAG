@@ -1,7 +1,7 @@
 # TaskFlow Pro — Test Suite
 
 ## Summary
-**142 tests pass · 0 fail** across 21 files. Numbers below are from a full
+**161 tests pass · 0 fail** across 23 files. Numbers below are from a full
 `bun test` run; regenerate rather than trusting them if they drift again.
 
 ## Engine Unit Tests (19 tests)
@@ -33,15 +33,27 @@ shared tables between files** — point `DATABASE_URL` at a scratch database.
 | `ai-queue.integration.test.ts` | 13 | BullMQ job lifecycle, per-task dedupe, retries, failure isolation |
 | `project-membership.integration.test.ts` | 9 | Preview visibility, roster gating, idempotent join, unique-violation handling |
 
-## Web App Tests (51 tests)
+## Web App Tests (70 tests)
 Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 
 | File | Tests | Coverage |
 |------|-------|----------|
 | `components/kanban-board/__tests__/board.test.tsx` | 19 | Columns, cards, drag-and-drop, dependency signals |
+| `components/__tests__/confirm-dialog.test.tsx` | 7 | Consequence copy, confirm, cancel, Escape, backdrop, in-flight lockout |
 | `hooks/__tests__/use-board.test.ts` | 9 | Optimistic updates and rollback |
 | `hooks/__tests__/use-websocket.test.ts` | 15 | Reconnect backoff, resync on reconnect, URL resolution |
 | `hooks/__tests__/use-ai-suggestions.test.ts` | 8 | Polling lifecycle, accept, reject |
+| `lib/__tests__/api-client.test.ts` | 12 | Envelope unwrapping, empty and non-JSON bodies, status-derived errors, 401 handling, redirect suppression |
+
+Two hook suites stub `globalThis.fetch` rather than mocking `@/lib/api-client`
+with `mock.module`. A `mock.module` in Bun is global and permanent for the
+process, so it silently replaced the real client for every suite that ran
+afterwards; the fetch stub puts the real client, envelope unwrapping included,
+under test instead.
+
+These suites avoid testing-library's `screen` and query within the rendered
+tree: `screen` binds to `document.body` at import time, which happy-dom does
+not have until a render has happened.
 
 ## WebSocket Server Tests (6 tests)
 
