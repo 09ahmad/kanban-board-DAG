@@ -3,6 +3,13 @@ import { WebSocketServer } from "ws";
 import { Redis } from "ioredis";
 import { connectionManager } from "./manager.js";
 import { handleClientMessage } from "./handlers.js";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = fileURLToPath(new URL(".", import.meta.url));
+const envPath = resolve(here, "../../../../.env");
+import dotenv from "dotenv";
+dotenv.config({ path: envPath, override: true });
 
 const WS_PORT = Number(process.env.WS_PORT) || 4001;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";

@@ -27,7 +27,7 @@ class OpenAiProvider implements AiProvider {
     taskId: number;
     tasks: { id: number; title: string }[];
   }): Promise<AiSuggestionItem[]> {
-    const apiKey = process.env.LLM_API_KEY;
+    const apiKey = config.llm.apiKey;
     if (!apiKey) {
       return [];
     }

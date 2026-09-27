@@ -30,7 +30,17 @@ async function main() {
     }
   }
 
-  // 2. Check if Docker is running for postgres
+  // 2. Check environment configuration
+  console.log("🔍 Checking environment configuration...");
+  try {
+    await $`bun run check-env`;
+    console.log("✅ Environment check passed\n");
+  } catch (error) {
+    console.error("❌ Environment check failed. Please fix the issues above.");
+    process.exit(1);
+  }
+
+  // 3. Check if Docker is running for postgres
   console.log("🐳 Checking PostgreSQL via Docker...");
   try {
     await $`docker compose up -d postgres`;
@@ -43,7 +53,7 @@ async function main() {
     console.log("   Please ensure PostgreSQL is running at:", process.env.DATABASE_URL || "postgresql://taskflow:taskflow@localhost:5432/taskflow\n");
   }
 
-  // 3. Generate Prisma client
+  // 4. Generate Prisma client
   console.log("🔧 Generating Prisma client...");
   try {
     await $`cd ${ROOT}/packages/db && bunx prisma generate`;
@@ -53,7 +63,7 @@ async function main() {
     process.exit(1);
   }
 
-  // 4. Push database schema
+  // 5. Push database schema
   console.log("📊 Pushing database schema...");
   try {
     await $`cd ${ROOT}/packages/db && bunx prisma db push`;
@@ -63,10 +73,14 @@ async function main() {
     process.exit(1);
   }
 
-  // 5. Seed database
+  // 6. Seed database
   console.log("🌱 Seeding database with demo data...");
   try {
-    await $`cd ${ROOT}/packages/db && bun run seed`;
+    console.log("   Running seed script...");
+    const result = await $`cd ${ROOT}/packages/db && bun run seed`;
+    // Get stdout from ReadableStream
+    const stdout = await new Response(result.stdout).text();
+    console.log("   Seed output:", stdout.trim() || "(no output)");
     console.log("✅ Database seeded\n");
   } catch (error) {
     console.error("❌ Failed to seed database:", error);

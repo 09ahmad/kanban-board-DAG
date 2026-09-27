@@ -125,7 +125,7 @@ function main() {
       console.log(`   ${variable.description}`);
       hasWarnings = true;
     } else if (!variable.required && !isSet) {
-      console.log(`ℹ️  ${variable.name} - Optional, not set`);
+      console.log(`ℹ️  ${variable.name} - Optional, not set (using default: ${variable.defaultValue || "none"})`);
       console.log(`   ${variable.description}`);
       if (variable.name === "LLM_API_KEY") {
         console.log(`   ⚠️  AI suggestions will be disabled. Add LLM_API_KEY to enable AI features.`);

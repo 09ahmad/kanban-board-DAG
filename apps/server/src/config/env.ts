@@ -1,10 +1,15 @@
-import { config as loadEnv } from "dotenv";
+import dotenv from "dotenv";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
-loadEnv({ path: resolve(here, "../../../../.env") });
-loadEnv();
+const envPath = resolve(here, "../../../../.env");
+const result = dotenv.config({ path: envPath, override: true });
+const parsed = result.parsed || {};
+
+for (const [key, value] of Object.entries(parsed)) {
+  process.env[key] = value;
+}
 
 function required(name: string): string {
   const value = process.env[name];
