@@ -14,7 +14,20 @@ interface ToastContextValue {
   remove: (id: number) => void;
 }
 
-const ToastContext = createContext<ToastContextValue | null>(null);
+/**
+ * With no provider, announcing something does nothing rather than throwing.
+ *
+ * AppLayout always supplies one, so this is not a licence to forget it. It is
+ * here because a component that merely *offers* to announce something should not
+ * be able to take a page down: a component under test can render without
+ * standing up the whole provider tree, and a forgotten provider degrades to
+ * silence instead of a blank screen.
+ */
+const ToastContext = createContext<ToastContextValue>({
+  toasts: [],
+  toast: () => {},
+  remove: () => {},
+});
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -40,11 +53,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast must be used within ToastProvider");
-  }
-  return ctx;
+  return useContext(ToastContext);
 }
 
 function Toaster() {

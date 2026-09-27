@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/toaster";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { Task, TaskDependency, TaskStatus } from "@repo/types";
 import { TaskStatus as TaskStatusEnum } from "@repo/types";
 
@@ -14,6 +15,16 @@ interface DependencyListProps {
   onDelete: (dependencyId: number) => Promise<void>;
   onAdd: () => void;
   onClose: () => void;
+}
+
+/** A dependency the user is about to cut, kept for the confirmation copy. */
+interface PendingRemoval {
+  dependencyId: number;
+  prerequisiteTitle: string;
+  dependentTitle: string;
+  /** The dependent stays, but may become unblocked or blocked as a result. */
+  dependentStatus: TaskStatus;
+  dependentReadiness: "READY" | "BLOCKED";
 }
 
 function getStatusLabel(status: TaskStatus): string {
@@ -37,6 +48,7 @@ function getReadinessBadgeVariant(readiness: "READY" | "BLOCKED"): "ready" | "bl
 export function DependencyList({ tasks, dependencies, onDelete, onAdd, onClose }: DependencyListProps) {
   const { toast } = useToast();
   const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+  const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
 
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
@@ -57,6 +69,34 @@ export function DependencyList({ tasks, dependencies, onDelete, onAdd, onClose }
     }
   };
 
+  /**
+   * Removing an edge is reversible by re-adding it, but not obviously so: the
+   * dependent's readiness can change, and if work had already been planned around
+   * this order, the plan is now wrong. So say what will change before it does.
+   */
+  const removalDialog = pendingRemoval && (
+    <ConfirmDialog
+      open
+      title="Remove this dependency?"
+      body={
+        pendingRemoval.dependentReadiness === "BLOCKED"
+          ? `“${pendingRemoval.dependentTitle}” is waiting on “${pendingRemoval.prerequisiteTitle}”. Removing this will unblock it.`
+          : `“${pendingRemoval.dependentTitle}” is no longer held back by “${pendingRemoval.prerequisiteTitle}”. ` +
+            (pendingRemoval.dependentStatus === "DONE"
+              ? "Its history is kept."
+              : "Work on it can start whenever it is otherwise clear.")
+      }
+      confirmLabel="Remove dependency"
+      busy={deletingIds.has(pendingRemoval.dependencyId)}
+      onCancel={() => setPendingRemoval(null)}
+      onConfirm={() => {
+        const id = pendingRemoval.dependencyId;
+        setPendingRemoval(null);
+        void handleDelete(id);
+      }}
+    />
+  );
+
   if (dependencies.length === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -74,6 +114,7 @@ export function DependencyList({ tasks, dependencies, onDelete, onAdd, onClose }
             <Button variant="secondary" onClick={onClose}>Close</Button>
           </div>
         </div>
+        {removalDialog}
       </div>
     );
   }
@@ -143,7 +184,15 @@ export function DependencyList({ tasks, dependencies, onDelete, onAdd, onClose }
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(dep.id)}
+                    onClick={() =>
+                      setPendingRemoval({
+                        dependencyId: dep.id,
+                        prerequisiteTitle: prerequisite.title,
+                        dependentTitle: dependent.title,
+                        dependentStatus: dependent.status,
+                        dependentReadiness: dependent.readiness,
+                      })
+                    }
                     disabled={deletingIds.has(dep.id)}
                     className="flex-shrink-0"
                   >
@@ -168,6 +217,7 @@ export function DependencyList({ tasks, dependencies, onDelete, onAdd, onClose }
           <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
+      {removalDialog}
     </div>
   );
 }

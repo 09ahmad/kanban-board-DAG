@@ -65,6 +65,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // The dependency being cut, held so the confirmation can name both ends of the
+  // edge and say what the removal will do to the dependent.
+  const [pendingDepRemoval, setPendingDepRemoval] = useState<{
+    id: number;
+    prerequisiteTitle: string;
+    dependentTitle: string;
+    dependentStatus: TaskStatus;
+    dependentReadiness: "READY" | "BLOCKED";
+  } | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [showDependencyModal, setShowDependencyModal] = useState(false);
 
@@ -405,7 +414,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteDependency(dep.id)}
+                        onClick={() =>
+                          setPendingDepRemoval({
+                            id: dep.id,
+                            prerequisiteTitle: prereqTask?.title ?? "This task",
+                            dependentTitle: task.title,
+                            dependentStatus: task.status,
+                            dependentReadiness: task.readiness,
+                          })
+                        }
                         className="text-error hover:text-error"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -460,7 +477,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteDependency(dep.id)}
+                        onClick={() =>
+                          setPendingDepRemoval({
+                            id: dep.id,
+                            prerequisiteTitle: task.title,
+                            dependentTitle: dependentTask?.title ?? "This task",
+                            dependentStatus: dependentTask?.status ?? "BACKLOG",
+                            dependentReadiness: dependentTask?.readiness ?? "READY",
+                          })
+                        }
                         className="text-error hover:text-error"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -498,6 +523,29 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
         busy={deleting}
         onConfirm={handleDeleteTask}
         onCancel={() => setConfirmingDelete(false)}
+      />
+
+      <ConfirmDialog
+        open={pendingDepRemoval !== null}
+        title="Remove this dependency?"
+        body={
+          pendingDepRemoval
+            ? pendingDepRemoval.dependentReadiness === "BLOCKED"
+              ? `“${pendingDepRemoval.dependentTitle}” is waiting on “${pendingDepRemoval.prerequisiteTitle}”. Removing this will unblock it.`
+              : `“${pendingDepRemoval.dependentTitle}” is no longer held back by “${pendingDepRemoval.prerequisiteTitle}”. ` +
+                (pendingDepRemoval.dependentStatus === "DONE"
+                  ? "Its history is kept."
+                  : "Work on it can start whenever it is otherwise clear.")
+            : ""
+        }
+        confirmLabel="Remove dependency"
+        onConfirm={() => {
+          if (!pendingDepRemoval) return;
+          const id = pendingDepRemoval.id;
+          setPendingDepRemoval(null);
+          void handleDeleteDependency(id);
+        }}
+        onCancel={() => setPendingDepRemoval(null)}
       />
     </AppLayout>
   );
