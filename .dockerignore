@@ -1,12 +1,12 @@
-# Keep the build context small. Each image copies only the workspace
-# package.json files it needs, then `bun install` (not the full Next.js tree).
+# node_modules must stay IN the context: the Dockerfiles COPY the host's
+# complete node_modules instead of running `bun install` (bun's registry
+# operations stall inside Docker build containers). Docker's content store
+# dedupes the identical node_modules layer shared by the backend images.
 
 .git
 .gitignore
 .github
 
-node_modules
-**/node_modules
 *.log
 npm-debug.log*
 yarn-debug.log*

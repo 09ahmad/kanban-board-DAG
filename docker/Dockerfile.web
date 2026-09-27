@@ -1,20 +1,16 @@
 # syntax=docker/dockerfile:1
-# Next.js: Bun installs the web workspace and builds; Node serves standalone.
-FROM oven/bun:1.2.19 AS builder
+# Next.js: dependencies are copied from the host instead of running
+# `bun install` here: bun's registry operations stall inside Docker build
+# containers. The build itself runs under Node, not Bun — `next build`
+# (Next 16 Turbopack runtime) fails to load its compiled modules under Bun.
+# The Node slim runner serves the standalone output.
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
+COPY node_modules ./node_modules
 COPY package.json ./
-COPY apps/web/package.json ./apps/web/
-COPY packages/types/package.json ./packages/types/
-COPY packages/ui/package.json ./packages/ui/
-COPY packages/eslint-config/package.json ./packages/eslint-config/
-COPY packages/typescript-config/package.json ./packages/typescript-config/
-
-RUN bun -e 'const p=await Bun.file("package.json").json(); p.workspaces=["apps/web","packages/types","packages/ui","packages/eslint-config","packages/typescript-config"]; p.devDependencies={}; await Bun.write("package.json", JSON.stringify(p,null,2))'
-RUN bun install
-
 COPY packages/types ./packages/types
 COPY packages/ui ./packages/ui
 COPY packages/eslint-config ./packages/eslint-config
@@ -32,7 +28,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_STANDALONE=true
 
 WORKDIR /app/apps/web
-RUN bun run build
+RUN node /app/node_modules/next/dist/bin/next build
 
 FROM node:24-bookworm-slim AS runner
 

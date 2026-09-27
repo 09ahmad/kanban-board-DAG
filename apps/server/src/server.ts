@@ -1,7 +1,7 @@
+import { config } from "./config/env.js";
 import { prisma } from "@repo/db/client";
 import { redis, redisPublisher, redisSubscriber } from "@repo/queue";
 import { createApp } from "./app.js";
-import { config } from "./config/env.js";
 import { startAiSuggestionWorker } from "./workers/ai-suggestion.worker.js";
 
 const app = createApp();

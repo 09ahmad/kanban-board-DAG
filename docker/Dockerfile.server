@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-# REST API. Workspace install is only the API graph (no Next.js / Turbo).
+# REST API + DAG engine. Dependencies are copied from the host instead of
+# running `bun install` here: bun's registry operations stall inside Docker
+# build containers (workspace resolution and bulk downloads hang), while the
+# host resolves the same graph in seconds. The host node_modules are complete
+# (all deps hoisted to the root), glibc linux, same arch as this image.
 FROM oven/bun:1.2.19
 
 RUN apt-get update \
@@ -8,21 +12,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
+COPY node_modules ./node_modules
 COPY package.json ./
-COPY apps/server/package.json ./apps/server/
-COPY packages/db/package.json ./packages/db/
-COPY packages/queue/package.json ./packages/queue/
-COPY packages/types/package.json ./packages/types/
-COPY packages/typescript-config/package.json ./packages/typescript-config/
-
-RUN bun -e 'const p=await Bun.file("package.json").json(); p.workspaces=["apps/server","packages/db","packages/queue","packages/types","packages/typescript-config"]; p.devDependencies={}; await Bun.write("package.json", JSON.stringify(p,null,2))'
-RUN bun install
-
-COPY apps/server ./apps/server
 COPY packages/db ./packages/db
 COPY packages/queue ./packages/queue
 COPY packages/types ./packages/types
 COPY packages/typescript-config ./packages/typescript-config
+COPY apps/server ./apps/server
 
 RUN cd packages/db && bunx prisma generate
 
