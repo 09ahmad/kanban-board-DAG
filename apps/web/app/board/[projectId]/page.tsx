@@ -103,7 +103,13 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     [refetch, loadCriticalPath, toast]
   );
 
-  useWebSocket(projectId, handleWSEvent);
+  const handleReconnect = useCallback(() => {
+    // Events published while the socket was down were never delivered, so the
+    // graph in hand can be behind the server with no event left to correct it.
+    void refetch({ silent: true }).then(loadCriticalPath);
+  }, [refetch, loadCriticalPath]);
+
+  useWebSocket(projectId, handleWSEvent, handleReconnect);
 
   const removeTask = useCallback(
     async (task: Task) => {

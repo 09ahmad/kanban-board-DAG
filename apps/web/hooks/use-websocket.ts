@@ -9,17 +9,31 @@ interface WSEvent {
 }
 
 const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_RECONNECT_DELAY = 30000;
 
-export function useWebSocket(projectId: number, onEvent: (event: WSEvent) => void) {
+/** Exponential backoff, capped so a long outage still keeps trying. */
+export function reconnectDelay(attempt: number): number {
+  return Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
+}
+
+export function useWebSocket(
+  projectId: number,
+  onEvent: (event: WSEvent) => void,
+  onReconnect?: () => void
+) {
   const wsRef = useRef<WebSocket | null>(null);
   const attemptsRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const unmountedRef = useRef(false);
+  const hasConnectedRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+
+  const onReconnectRef = useRef(onReconnect);
+  onReconnectRef.current = onReconnect;
 
   const connect = useCallback(() => {
     if (unmountedRef.current) return;
@@ -35,6 +49,11 @@ export function useWebSocket(projectId: number, onEvent: (event: WSEvent) => voi
         setReconnectAttempts(0);
         setConnected(true);
         ws.send(JSON.stringify({ type: "PROJECT_SUBSCRIBE", projectId }));
+
+        // Anything published while the socket was down never reached this tab, so
+        // the first open is silent and every later one asks for a resync.
+        if (hasConnectedRef.current) onReconnectRef.current?.();
+        hasConnectedRef.current = true;
       };
 
       ws.onmessage = (event) => {
@@ -51,7 +70,7 @@ export function useWebSocket(projectId: number, onEvent: (event: WSEvent) => voi
         wsRef.current = null;
         if (unmountedRef.current) return;
         if (attemptsRef.current >= MAX_RECONNECT_ATTEMPTS) return;
-        const delay = Math.min(1000 * Math.pow(2, attemptsRef.current), 30000);
+        const delay = reconnectDelay(attemptsRef.current);
         attemptsRef.current += 1;
         setReconnectAttempts(attemptsRef.current);
         timerRef.current = setTimeout(connect, delay);
@@ -84,14 +103,4 @@ export function useWebSocket(projectId: number, onEvent: (event: WSEvent) => voi
   }, [connect]);
 
   return { connected, reconnectAttempts };
-}
-
-export function useWebSocketEvents(projectId: number) {
-  const [events, setEvents] = useState<WSEvent[]>([]);
-  const handleEvent = useCallback((event: WSEvent) => {
-    setEvents((prev) => [...prev, event]);
-  }, []);
-
-  const { connected, reconnectAttempts } = useWebSocket(projectId, handleEvent);
-  return { events, connected, reconnectAttempts };
 }

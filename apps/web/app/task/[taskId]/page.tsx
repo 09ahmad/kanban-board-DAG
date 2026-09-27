@@ -178,7 +178,15 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
 
   // Only subscribe to WebSocket after task loads and we have projectId
   const projectId = task?.projectId;
-  useWebSocket(projectId || 0, handleWSEvent);
+  useWebSocket(
+    projectId || 0,
+    handleWSEvent,
+    // Changes made elsewhere while this tab was disconnected arrive as nothing
+    // at all, so a reconnect has to re-read the task.
+    useCallback(() => {
+      void fetchTask();
+    }, [fetchTask])
+  );
 
   if (loading) {
     return (
