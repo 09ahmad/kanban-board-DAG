@@ -9,6 +9,28 @@ export const AiSuggestionItemSchema = z.object({
 
 export type AiSuggestionItem = z.infer<typeof AiSuggestionItemSchema>;
 
+/**
+ * A suggestion as the model proposes it, before the database has seen it.
+ *
+ * Deliberately separate from `AiSuggestionItemSchema`: the row id is assigned by
+ * PostgreSQL on insert, so a model asked for one either invents a number or
+ * fails to answer. Validating model output against the stored shape rejected
+ * every response and the feature silently returned nothing.
+ */
+export const AiSuggestionCandidateSchema = z.object({
+  prerequisiteTaskId: z.number().int().positive(),
+  confidence: z.number().min(0).max(1),
+  reason: z.string().optional(),
+});
+
+export type AiSuggestionCandidate = z.infer<typeof AiSuggestionCandidateSchema>;
+
+export const AiSuggestionCandidateResponseSchema = z.object({
+  suggestions: z.array(AiSuggestionCandidateSchema).max(10),
+});
+
+export type AiSuggestionCandidateResponse = z.infer<typeof AiSuggestionCandidateResponseSchema>;
+
 export const AiSuggestionResponseSchema = z.object({
   suggestions: z.array(AiSuggestionItemSchema).max(10),
 });

@@ -1,5 +1,5 @@
-import type { AiSuggestionItem } from "@repo/types";
-import { AiSuggestionResponseSchema } from "@repo/types";
+import type { AiSuggestionCandidate } from "@repo/types";
+import { AiSuggestionCandidateResponseSchema } from "@repo/types";
 import { config } from "../config/env.js";
 
 export class AiProviderError extends Error {
@@ -14,19 +14,25 @@ export interface AiProvider {
     projectName: string;
     taskId: number;
     tasks: { id: number; title: string }[];
-  }): Promise<AiSuggestionItem[]>;
+  }): Promise<AiSuggestionCandidate[]>;
 }
 
 /**
  * OpenAI AI Provider - uses OpenAI's GPT models via the Chat Completions API.
  * Falls back gracefully when no API key is configured (returns empty suggestions).
  */
-class OpenAiProvider implements AiProvider {
+export class OpenAiProvider implements AiProvider {
+  private readonly timeoutMs: number;
+
+  constructor(timeoutMs: number = config.llm.timeoutMs) {
+    this.timeoutMs = timeoutMs;
+  }
+
   async generateDependencySuggestions(context: {
     projectName: string;
     taskId: number;
     tasks: { id: number; title: string }[];
-  }): Promise<AiSuggestionItem[]> {
+  }): Promise<AiSuggestionCandidate[]> {
     const apiKey = config.llm.apiKey;
     if (!apiKey) {
       return [];
@@ -61,58 +67,78 @@ Max 10 suggestions. Focus on strong logical dependencies, not weak ones.`;
 
     const url = `${config.llm.baseUrl}/chat/completions`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.llm.model,
-        messages: [{
-          role: "user",
-          content: prompt
-        }],
-        temperature: 0.7,
-        max_tokens: 1024,
-        response_format: { type: "json_object" }
-      }),
-    });
+    // The provider is a third party on a network we do not control. Without a
+    // bound, a stalled upstream holds this request — and the connection serving
+    // it — open indefinitely.
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.warn(`OpenAI API request failed: ${response.status} - ${errorText}`);
-      return [];
-    }
-
-    const result = await response.json();
-    const text = result.choices?.[0]?.message?.content;
-
-    if (!text) {
-      console.warn("OpenAI returned no content");
-      return [];
-    }
-
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
-    } catch {
-      console.warn("OpenAI returned invalid JSON");
-      return [];
-    }
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.llm.model,
+          messages: [{
+            role: "user",
+            content: prompt
+          }],
+          // Reading dependencies out of task titles is a lookup, not a writing
+          // task. Any randomness here just makes the same project propose
+          // different edges on a later click.
+          temperature: 0,
+          max_tokens: 1024,
+          response_format: { type: "json_object" }
+        }),
+        signal: controller.signal,
+      });
 
-    const validated = AiSuggestionResponseSchema.safeParse(parsed);
-    if (!validated.success) {
-      console.warn("OpenAI payload failed validation");
-      return [];
-    }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn(`OpenAI API request failed: ${response.status} - ${errorText}`);
+        return [];
+      }
 
-    return validated.data.suggestions;
+      const result = await response.json();
+      const text = result.choices?.[0]?.message?.content;
+
+      if (!text) {
+        console.warn("OpenAI returned no content");
+        return [];
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        console.warn("OpenAI returned invalid JSON");
+        return [];
+      }
+
+      const validated = AiSuggestionCandidateResponseSchema.safeParse(parsed);
+      if (!validated.success) {
+        console.warn("OpenAI payload failed validation");
+        return [];
+      }
+
+      return validated.data.suggestions;
+    } catch (error) {
+      // A timeout, a refused connection or an unreadable body all mean the same
+      // thing here: no suggestions, and the request still completes.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`OpenAI API request failed: ${reason}`);
+      return [];
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 }
 
 class NoopAiProvider implements AiProvider {
-  async generateDependencySuggestions(): Promise<AiSuggestionItem[]> {
+  async generateDependencySuggestions(): Promise<AiSuggestionCandidate[]> {
     return [];
   }
 }
