@@ -57,7 +57,7 @@ afterEach(() => {
 
 describe("useAiSuggestions", () => {
   test("starts idle with nothing to show", () => {
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     expect(result.current.suggestions).toEqual([]);
     expect(result.current.busy).toBe(false);
@@ -66,7 +66,7 @@ describe("useAiSuggestions", () => {
 
   test("generating hands the work to the server and waits for the worker", async () => {
     serveRun({ suggestions: [], status: "running" });
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     await act(async () => {
       await result.current.generate();
@@ -79,7 +79,7 @@ describe("useAiSuggestions", () => {
 
   test("a finished run surfaces the suggestions the worker produced", async () => {
     serveRun({ suggestions: [suggestion], status: "completed" });
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     // The panel reads an existing pending list as soon as the task is picked,
     // so the suggestions are on screen before Generate is even clicked.
@@ -96,7 +96,7 @@ describe("useAiSuggestions", () => {
 
   test("a failed run stops the spinner and explains itself", async () => {
     serveRun({ suggestions: [], status: "failed" });
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     await act(async () => {
       await result.current.generate();
@@ -107,7 +107,7 @@ describe("useAiSuggestions", () => {
   });
 
   test("a rejected request reports the server's message and stays idle", async () => {
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     await act(async () => {
       await result.current.generate();
@@ -120,7 +120,7 @@ describe("useAiSuggestions", () => {
   test("accepting removes the suggestion from the list", async () => {
     serveRun({ suggestions: [suggestion], status: "completed" });
     routes.push({ match: "/accept", payload: { suggestion: { ...suggestion, status: "ACCEPTED" } } });
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     await act(async () => {
       await result.current.generate();
@@ -137,7 +137,7 @@ describe("useAiSuggestions", () => {
   test("rejecting removes the suggestion from the list", async () => {
     serveRun({ suggestions: [suggestion], status: "completed" });
     routes.push({ match: "/reject", payload: { suggestion: { ...suggestion, status: "REJECTED" } } });
-    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
+    const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5, thinkingWindowMs: 5 }));
 
     await act(async () => {
       await result.current.generate();

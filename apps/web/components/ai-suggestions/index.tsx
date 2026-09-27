@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -12,12 +12,37 @@ interface AiSuggestionsProps {
   taskId?: number;
 }
 
+/** What the panel says it is doing while a run is in flight, ChatGPT-style. */
+const THINKING_STEPS = [
+  "Reading the task…",
+  "Scanning the other tasks…",
+  "Ranking candidate dependencies…",
+  "Checking the graph…",
+];
+
 export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
   const { suggestions, busy, error, generate, accept, reject } = useAiSuggestions({
     projectId,
     taskId,
   });
   const [acceptedNote, setAcceptedNote] = useState<string | null>(null);
+  const [generatedOnce, setGeneratedOnce] = useState(false);
+  const [thinkingStep, setThinkingStep] = useState(0);
+
+  useEffect(() => {
+    if (!busy) return;
+    setThinkingStep(0);
+    const interval = setInterval(() => {
+      setThinkingStep((step) => (step + 1) % THINKING_STEPS.length);
+    }, 800);
+    return () => clearInterval(interval);
+  }, [busy]);
+
+  const handleGenerate = async () => {
+    setGeneratedOnce(true);
+    setAcceptedNote(null);
+    await generate();
+  };
 
   const handleAccept = async (suggestion: AiSuggestionItem) => {
     const impact = await accept(suggestion);
@@ -35,12 +60,24 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
         <Button
           variant="secondary"
           size="sm"
-          onClick={generate}
-          disabled={busy}
+          onClick={handleGenerate}
+          disabled={busy || !taskId}
         >
-          {busy ? "Generating…" : "Generate"}
+          {busy ? "Analyzing…" : "Generate"}
         </Button>
       </div>
+
+      {busy && (
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-4" role="status" aria-live="polite">
+          <div className="flex items-center gap-3">
+            <svg className="animate-spin flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+            </svg>
+            <span className="text-[14px] text-ink transition-all">{THINKING_STEPS[thinkingStep]}</span>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-error/10 border border-error/20 rounded-lg p-3 text-error text-[14px]">
@@ -56,7 +93,9 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
 
       {suggestions.length === 0 && !busy && (
         <p className="text-body text-[14px] text-muted">
-          No suggestions right now. Click Generate to see AI-proposed dependencies.
+          {generatedOnce
+            ? "No missing links found — every useful dependency for this task already exists."
+            : "No suggestions right now. Click Generate to see AI-proposed dependencies."}
         </p>
       )}
 

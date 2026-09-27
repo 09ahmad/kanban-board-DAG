@@ -4,15 +4,19 @@ import type { AiSuggestionItem, SuggestionRunStateDto } from "@repo/types";
 
 const PENDING_STATES: SuggestionRunStateDto[] = ["queued", "running"];
 const POLL_INTERVAL_MS = 1000;
+/** How long the panel visibly thinks before a fast answer may land. */
+const THINKING_WINDOW_MS = 2200;
 
 interface UseAiSuggestionsArgs {
   projectId: number;
   taskId?: number;
   /** How long to wait between reads of a run that is still outstanding. */
   pollIntervalMs?: number;
+  /** How long the panel visibly thinks before a fast answer may land. */
+  thinkingWindowMs?: number;
 }
 
-export function useAiSuggestions({ projectId, taskId, pollIntervalMs = POLL_INTERVAL_MS }: UseAiSuggestionsArgs) {
+export function useAiSuggestions({ projectId, taskId, pollIntervalMs = POLL_INTERVAL_MS, thinkingWindowMs = THINKING_WINDOW_MS }: UseAiSuggestionsArgs) {
   const [suggestions, setSuggestions] = useState<AiSuggestionItem[]>([]);
   const [runState, setRunState] = useState<SuggestionRunStateDto>("completed");
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +75,12 @@ export function useAiSuggestions({ projectId, taskId, pollIntervalMs = POLL_INTE
       );
       if (!mountedRef.current) return;
       setRunState("queued");
-      timerRef.current = setTimeout(() => void poll(), pollIntervalMs);
+      // The analysis is worked out of process either way. When it settles
+      // fast — a heuristic run takes milliseconds — the first read still
+      // waits out a thinking window, so the answer never lands before the
+      // panel has visibly thought about it.
+      const firstReadMs = Math.max(pollIntervalMs, thinkingWindowMs);
+      timerRef.current = setTimeout(() => void poll(), firstReadMs);
     } catch (err: any) {
       if (!mountedRef.current) return;
       setRunState("completed");
