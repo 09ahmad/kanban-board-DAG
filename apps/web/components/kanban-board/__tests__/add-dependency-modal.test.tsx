@@ -106,7 +106,7 @@ describe("AddDependencyModal", () => {
     // A cycle is only detectable with the whole graph, which is the server's
     // job, so the message has to survive the trip back.
     const onAdd = vi.fn(async () => {
-      throw { error: { code: "WOULD_CREATE_CYCLE", message: "That link would create a cycle." } };
+      throw { error: { code: "CYCLE_DETECTED", message: "That link would create a cycle." } };
     });
     const onClose = vi.fn();
     const { q, selects, submit } = open({ onAdd, onClose });
