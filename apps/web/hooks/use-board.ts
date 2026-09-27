@@ -41,7 +41,7 @@ interface UseBoardReturn {
   markDependenciesPosted: (taskId: number) => void;
   pendingReadinessIds: Set<number>;
   deleteTask: (taskId: number) => Promise<void>;
-  fetchDependents: (taskId: number) => Promise<Task[]>;
+  getDependents: (taskId: number) => Task[];
   createDependency: (prerequisiteTaskId: number, dependentTaskId: number) => Promise<void>;
   deleteDependency: (dependencyId: number) => Promise<void>;
   fetchCriticalPath: () => Promise<CriticalPathResult | null>;
@@ -262,17 +262,26 @@ export function useBoard(projectId: number): UseBoardReturn {
     [writePending]
   );
 
-  const fetchDependents = useCallback(
-    async (taskId: number): Promise<Task[]> => {
-      const res = await apiClient<GraphResponse>(`/projects/${projectId}/graph`);
-      const data = unwrapResponse(res);
-      const byId = new Map(data.tasks.map((t) => [t.id, t]));
-      return data.dependencies
+  /**
+   * What waits on a task, read from state the hook already holds.
+   *
+   * This used to fetch the whole graph again and filter the answer, which cost
+   * a full round trip on every click of a delete button to learn something the
+   * board had already been told — the graph in state is kept current by
+   * `refetch` and by dependency events, and it is the same data this function
+   * was throwing away and rebuilding.
+   *
+   * The delete itself is still the server's call, so this is only ever used for
+   * the wording of the confirmation. If state were somehow behind, the worst
+   * case is a count that understates before the server does the real work.
+   */
+  const getDependents = useCallback(
+    (taskId: number): Task[] =>
+      dependencies
         .filter((edge) => edge.prerequisiteTaskId === taskId)
-        .map((edge) => byId.get(edge.dependentTaskId))
-        .filter((t): t is Task => Boolean(t));
-    },
-    [projectId]
+        .map((edge) => tasks.get(edge.dependentTaskId))
+        .filter((task): task is Task => Boolean(task)),
+    [dependencies, tasks]
   );
 
   const createDependency = useCallback(
@@ -354,7 +363,7 @@ export function useBoard(projectId: number): UseBoardReturn {
     markDependenciesPosted,
     pendingReadinessIds,
     deleteTask,
-    fetchDependents,
+    getDependents,
     createDependency,
     deleteDependency,
     fetchCriticalPath,

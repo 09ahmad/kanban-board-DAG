@@ -25,6 +25,7 @@ function makeTask(
 const toasts: { type: string; message: string }[] = [];
 
 let graphTasks: Task[] = [];
+let graphDeps: { id: number; projectId: number; prerequisiteTaskId: number; dependentTaskId: number }[] = [];
 let moveShouldFail = false;
 
 const realFetch = globalThis.fetch;
@@ -44,7 +45,7 @@ function jsonResponse(payload: unknown, status: number): Response {
 globalThis.fetch = (async (input: string | URL | Request) => {
   const endpoint = String(input);
   if (endpoint.includes("/graph")) {
-    return jsonResponse({ success: true, data: { tasks: graphTasks, dependencies: [] } }, 200);
+    return jsonResponse({ success: true, data: { tasks: graphTasks, dependencies: graphDeps } }, 200);
   }
   if (endpoint.includes("/move")) {
     if (moveShouldFail) {
@@ -82,6 +83,7 @@ beforeEach(() => {
   toasts.length = 0;
   moveShouldFail = false;
   graphTasks = [];
+  graphDeps = [];
 });
 
 afterAll(() => {
@@ -189,5 +191,52 @@ describe("useBoard optimistic updates", () => {
     });
 
     expect(toasts.filter((t) => t.type === "success")).toHaveLength(1);
+  });
+});
+
+describe("useBoard getDependents", () => {
+  test("reads the graph already in hand instead of asking again", async () => {
+    graphTasks = [makeTask(1), makeTask(2)];
+    graphDeps = [{ id: 1, projectId: 1, prerequisiteTaskId: 1, dependentTaskId: 2 }];
+    const { result } = await mountBoard();
+
+    let requests = 0;
+    const countingFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requests += 1;
+      return countingFetch(input);
+    }) as typeof globalThis.fetch;
+
+    const dependents = result.current.getDependents(1);
+    globalThis.fetch = countingFetch;
+
+    // The point of the change: asking what depends on a task, which is what
+    // clicking delete does, must not be a second trip to the server.
+    expect(requests).toBe(0);
+    expect(dependents.map((t) => t.id)).toEqual([2]);
+  });
+
+  test("returns only the tasks downstream of that one task", async () => {
+    graphTasks = [makeTask(1), makeTask(2), makeTask(3), makeTask(4)];
+    graphDeps = [
+      { id: 1, projectId: 1, prerequisiteTaskId: 1, dependentTaskId: 2 },
+      { id: 2, projectId: 1, prerequisiteTaskId: 1, dependentTaskId: 3 },
+      { id: 3, projectId: 1, prerequisiteTaskId: 2, dependentTaskId: 4 },
+    ];
+    const { result } = await mountBoard();
+
+    // 4 depends on 2, not directly on 1, so it is not a direct dependent here.
+    expect(result.current.getDependents(1).map((t) => t.id)).toEqual([2, 3]);
+    expect(result.current.getDependents(2).map((t) => t.id)).toEqual([4]);
+    expect(result.current.getDependents(4)).toEqual([]);
+  });
+
+  test("skips an edge whose dependent is not in the loaded graph", async () => {
+    graphTasks = [makeTask(1)];
+    graphDeps = [{ id: 1, projectId: 1, prerequisiteTaskId: 1, dependentTaskId: 99 }];
+    const { result } = await mountBoard();
+
+    // A dangling edge must not surface as a hole in the confirmation copy.
+    expect(result.current.getDependents(1)).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@ All verification passes:
 - `bun run build` ✓ (Turbopack)
 - `bun run check-types` ✓ (all 6 packages)
 - `bun run lint` ✓ (0 warnings)
-- `bun test` ✓ (223 pass, 0 fail, 29 files)
+- `bun test` ✓ (226 pass, 0 fail, 29 files)
 
 Every item in the audit list is done; what remains is in **Known limitations**.
 Counts and inventories here were regenerated from the tree on 2026-09-27; if they

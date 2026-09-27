@@ -1,7 +1,7 @@
 # TaskFlow Pro — Test Suite
 
 ## Summary
-**223 tests pass · 0 fail** across 29 files. Numbers below are from a full
+**226 tests pass · 0 fail** across 29 files. Numbers below are from a full
 `bun test` run; regenerate rather than trusting them if they drift again.
 
 ## Engine Unit Tests (19 tests)
@@ -42,7 +42,7 @@ rather than a requirement.
 |------|-------|----------|
 | `config/__tests__/env.test.ts` | 5 | JWT lifetime default, blank fallback, configured duration, trimming |
 
-## Web App Tests (119 tests)
+## Web App Tests (122 tests)
 Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 
 | File | Tests | Coverage |
@@ -50,7 +50,7 @@ Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 | `components/kanban-board/__tests__/board.test.tsx` | 20 | Columns, cards, drag-and-drop, dependency signals |
 | `components/__tests__/confirm-dialog.test.tsx` | 7 | Consequence copy, confirm, cancel, Escape, backdrop, in-flight lockout |
 | `components/kanban-board/__tests__/add-dependency-modal.test.tsx` | 7 | Pick a prerequisite, duplicate and self edges, cycle rejection, preselection |
-| `hooks/__tests__/use-board.test.ts` | 9 | Optimistic updates and rollback |
+| `hooks/__tests__/use-board.test.ts` | 12 | Optimistic updates and rollback, dependents read from state with no request |
 | `hooks/__tests__/use-websocket.test.ts` | 21 | Reconnect backoff, resync on reconnect, URL resolution, teammate-only notifications |
 | `hooks/__tests__/use-ai-suggestions.test.ts` | 8 | Polling lifecycle, accept, reject |
 | `lib/__tests__/api-client.test.ts` | 12 | Envelope unwrapping, empty and non-JSON bodies, status-derived errors, 401 handling, redirect suppression |

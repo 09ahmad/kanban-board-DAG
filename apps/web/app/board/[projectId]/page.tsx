@@ -38,7 +38,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     markDependenciesPosted,
     pendingReadinessIds,
     deleteTask,
-    fetchDependents,
+    getDependents,
     createDependency,
     deleteDependency,
     refetch,
@@ -138,13 +138,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
       const task = tasks.get(taskId);
       if (!task) return;
 
-      let dependents: Task[];
-      try {
-        dependents = await fetchDependents(taskId);
-      } catch (err: any) {
-        toast({ type: "error", message: err?.error?.message ?? "Could not check what depends on this task" });
-        return;
-      }
+      // Read from the graph already on screen, so opening the confirmation costs
+      // no request. Nothing here can fail, which is why the failure path went
+      // with it: a wording error is not worth failing a delete over.
+      const dependents = getDependents(taskId);
 
       if (dependents.length === 0) {
         try {
@@ -157,7 +154,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
 
       setPendingDelete({ task, dependents });
     },
-    [tasks, fetchDependents, removeTask, toast]
+    [getDependents, removeTask, toast]
   );
 
   const confirmDeleteTask = useCallback(async () => {
