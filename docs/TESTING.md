@@ -1,7 +1,7 @@
 # TaskFlow Pro — Test Suite
 
 ## Summary
-**195 tests pass · 0 fail** across 26 files. Numbers below are from a full
+**223 tests pass · 0 fail** across 29 files. Numbers below are from a full
 `bun test` run; regenerate rather than trusting them if they drift again.
 
 ## Engine Unit Tests (19 tests)
@@ -17,7 +17,7 @@ Pure functions, no I/O, no database.
 | `regression.test.ts` | 1 | A reverts to IN_PROGRESS; B and C become BLOCKED, status untouched |
 | `convergence.test.ts` | 1 | Diamond A→B, A→C, B→D, C→D; A shifts +3d; D shifts +3d exactly once |
 
-## Server Tests (75 tests)
+## Server Tests (79 tests)
 Drive the real Express app against a live PostgreSQL and Redis.
 
 These suites take a per-run identity and delete only what they created, so they
@@ -28,7 +28,7 @@ rather than a requirement.
 
 | File | Tests | Coverage |
 |------|-------|----------|
-| `auth.integration.test.ts` | 10 | Register, login, JWT validation, logout |
+| `auth.integration.test.ts` | 14 | Register, login, JWT validation, logout, session refresh |
 | `dependency.integration.test.ts` | 5 | CRUD, cycle detection, graph, critical path, events |
 | `task-move.integration.test.ts` | 2 | BLOCKED guard and readiness |
 | `diamond.integration.test.ts` | 2 | Compounding math and regression |
@@ -42,7 +42,7 @@ rather than a requirement.
 |------|-------|----------|
 | `config/__tests__/env.test.ts` | 5 | JWT lifetime default, blank fallback, configured duration, trimming |
 
-## Web App Tests (95 tests)
+## Web App Tests (119 tests)
 Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 
 | File | Tests | Coverage |
@@ -55,6 +55,9 @@ Run under happy-dom. The AI polling hook is driven against a fake WebSocket.
 | `hooks/__tests__/use-ai-suggestions.test.ts` | 8 | Polling lifecycle, accept, reject |
 | `lib/__tests__/api-client.test.ts` | 12 | Envelope unwrapping, empty and non-JSON bodies, status-derived errors, 401 handling, redirect suppression |
 | `lib/__tests__/remote-activity.test.ts` | 11 | Wording per event, own and actor-less silence, burst collapsing |
+| `lib/__tests__/session.test.ts` | 8 | Refresh window, the boundary, unreadable and expired tokens |
+| `components/__tests__/skeleton.test.tsx` | 9 | Each placeholder announces itself and reserves its space |
+| `components/kanban-board/__tests__/dependency-list.test.tsx` | 7 | Removing an edge asks first, says what changes, cancels cleanly |
 
 Two hook suites stub `globalThis.fetch` rather than mocking `@/lib/api-client`
 with `mock.module`. A `mock.module` in Bun is global and permanent for the

@@ -1,14 +1,14 @@
 # TaskFlow Pro — Current State (updated 2026-09-27)
 
-## Project Status: feature-complete, with known gaps
+## Project Status: feature-complete, with documented limitations
 
 All verification passes:
 - `bun run build` ✓ (Turbopack)
 - `bun run check-types` ✓ (all 6 packages)
 - `bun run lint` ✓ (0 warnings)
-- `bun test` ✓ (195 pass, 0 fail, 26 files)
+- `bun test` ✓ (223 pass, 0 fail, 29 files)
 
-Feature-complete against the audit list except the items under **Open work** below.
+Every item in the audit list is done; what remains is in **Known limitations**.
 Counts and inventories here were regenerated from the tree on 2026-09-27; if they
 drift, regenerate rather than trusting them.
 
@@ -92,11 +92,8 @@ as a description of the current tree.
 
 ## Open work
 
-Verified against the code on 2026-09-27, from the audit's section 6:
-
-| # | Item | Notes |
-|---|------|-------|
-| 1 | Loading skeletons | Spinners only. Not a correctness issue. |
+None. Every item in the audit's section 6 is either done or written down as a
+known limitation above, checked against the code on 2026-09-27.
 
 Resolved since the audit list was written:
 
