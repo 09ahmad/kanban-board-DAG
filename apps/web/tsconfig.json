@@ -6,6 +6,7 @@
         "name": "next"
       }
     ],
+    "types": ["bun", "node"],
     "strictNullChecks": true,
     "allowImportingTsExtensions": true,
     "paths": {

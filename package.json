@@ -21,7 +21,7 @@
     "test:types": "bun test packages/types/src/**/*.test.ts",
     "test:db": "bun test packages/db/src/**/*.test.ts",
     "test:queue": "bun test packages/queue/src/**/*.test.ts",
-    "test:web": "bun test apps/web/src/**/*.test.ts",
+    "test:web": "bun test apps/web",
     "db:generate": "cd packages/db && bunx prisma generate",
     "db:push": "cd packages/db && bunx prisma db push",
     "db:migrate": "cd packages/db && bunx prisma migrate dev",

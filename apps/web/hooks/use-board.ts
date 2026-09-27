@@ -121,12 +121,15 @@ export function useBoard(projectId: number): UseBoardReturn {
 
   const moveTask = useCallback(
     async (taskId: number, status: TaskStatus, position?: number) => {
+      // Captured from the pre-write state: the rollback below must restore the
+      // values as they were, not the ones this call just applied.
+      let snapshot: Task | undefined;
       setTasks((prev) => {
+        const task = prev.get(taskId);
+        snapshot = task;
+        if (!task) return prev;
         const next = new Map(prev);
-        const task = next.get(taskId);
-        if (task) {
-          next.set(taskId, { ...task, status, position: position ?? task.position });
-        }
+        next.set(taskId, { ...task, status, position: position ?? task.position });
         return next;
       });
 
@@ -139,11 +142,9 @@ export function useBoard(projectId: number): UseBoardReturn {
         toast({ type: "success", message: `Task moved to ${status.replace("_", " ")}` });
       } catch (err: any) {
         setTasks((prev) => {
+          if (!snapshot) return prev;
           const next = new Map(prev);
-          const task = next.get(taskId);
-          if (task) {
-            next.set(taskId, { ...task, status: task.status });
-          }
+          next.set(taskId, snapshot);
           return next;
         });
         toast({ type: "error", message: err?.error?.message ?? "Move failed" });
@@ -155,12 +156,13 @@ export function useBoard(projectId: number): UseBoardReturn {
 
   const reorderTask = useCallback(
     async (taskId: number, newPosition: number, status: TaskStatus) => {
+      let snapshot: Task | undefined;
       setTasks((prev) => {
+        const task = prev.get(taskId);
+        snapshot = task;
+        if (!task) return prev;
         const next = new Map(prev);
-        const task = next.get(taskId);
-        if (task) {
-          next.set(taskId, { ...task, position: newPosition });
-        }
+        next.set(taskId, { ...task, position: newPosition });
         return next;
       });
 
@@ -173,11 +175,9 @@ export function useBoard(projectId: number): UseBoardReturn {
         toast({ type: "success", message: "Task reordered" });
       } catch (err: any) {
         setTasks((prev) => {
+          if (!snapshot) return prev;
           const next = new Map(prev);
-          const task = next.get(taskId);
-          if (task) {
-            next.set(taskId, { ...task, position: task.position });
-          }
+          next.set(taskId, snapshot);
           return next;
         });
         toast({ type: "error", message: err?.error?.message ?? "Reorder failed" });
@@ -332,7 +332,12 @@ export function useBoard(projectId: number): UseBoardReturn {
   const columns = statusOrder.map((status) => ({
     id: status,
     title: status.replace("_", " "),
-    tasks: Array.from(tasks.values()).filter((t) => t.status === status),
+    // `position` is what a reorder writes, so it — not insertion order — has to
+    // decide the visual order. The id tiebreak keeps rendering stable while a
+    // drag is settling and two cards briefly share a position.
+    tasks: Array.from(tasks.values())
+      .filter((t) => t.status === status)
+      .sort((a, b) => a.position - b.position || a.id - b.id),
   }));
 
   const pendingReadinessIds = useMemo(() => new Set(pendingReadiness.keys()), [pendingReadiness]);

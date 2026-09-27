@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefCallback } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import type { Task, TaskStatus, ReadinessState } from "@repo/types";
 
@@ -11,6 +13,13 @@ interface TaskCardProps {
   columnId?: TaskStatus;
   isCritical?: boolean;
   readinessPending?: boolean;
+  /** dnd-kit's node ref. Omitted for the non-interactive drag-overlay preview. */
+  setNodeRef?: RefCallback<HTMLDivElement>;
+  /** dnd-kit's attributes + listeners, which make the node a drag handle. */
+  dragHandleProps?: Record<string, unknown>;
+  /** dnd-kit's animated transform for this card. */
+  sortableStyle?: CSSProperties;
+  isDragging?: boolean;
 }
 
 function getStatusColor(status: TaskStatus, readiness: ReadinessState): string {
@@ -37,6 +46,10 @@ export function TaskCard({
   columnId,
   isCritical,
   readinessPending,
+  setNodeRef,
+  dragHandleProps,
+  sortableStyle,
+  isDragging,
 }: TaskCardProps) {
   // A pending badge is neutral on purpose: the DAG Engine owns this value and
   // has not reported one for this task yet.
@@ -64,18 +77,21 @@ export function TaskCard({
 
   return (
     <div
+      ref={setNodeRef}
+      style={sortableStyle}
       className={cn(
-        "flex items-center gap-3 p-3 rounded-md cursor-pointer relative group",
+        "flex items-center gap-3 p-3 rounded-md cursor-grab relative group touch-none",
         "border border-transparent hover:border-primary/20 transition-colors",
         "hover:bg-surface-card",
-        columnId && task.readiness === "BLOCKED" && "cursor-not-allowed hover:bg-transparent",
+        isDragging && "opacity-40",
+        columnId && task.readiness === "BLOCKED" && "cursor-grab hover:bg-surface-card",
         task.readiness === "BLOCKED" && columnId === "IN_PROGRESS" && "opacity-50",
         task.readiness === "READY" && "ring-1 ring-primary/20",
         isCritical && "ring-2 ring-primary ring-offset-2 ring-offset-surface-soft"
       )}
       role="button"
       tabIndex={0}
-      onMouseDown={(e) => e.preventDefault()}
+      {...dragHandleProps}
       onClick={() => onClick?.(task.id)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -169,5 +185,26 @@ export function TaskCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The card as it appears on the board: registered with @dnd-kit so it can be
+ * picked up. Kept apart from `TaskCard` because the drag-overlay preview renders
+ * the same markup and must not register a second draggable for one task.
+ */
+export function SortableTaskCard(props: TaskCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.task.id,
+  });
+
+  return (
+    <TaskCard
+      {...props}
+      setNodeRef={setNodeRef}
+      dragHandleProps={{ ...attributes, ...listeners }}
+      sortableStyle={{ transform: CSS.Translate.toString(transform), transition }}
+      isDragging={isDragging}
+    />
   );
 }

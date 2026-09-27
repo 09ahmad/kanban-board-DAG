@@ -1,6 +1,15 @@
 "use client";
 
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, closestCenter } from "@dnd-kit/core";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragStartEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { useState, useCallback, useMemo } from "react";
 import type { Task, TaskDependency } from "@repo/types";
 import { TaskStatus } from "@repo/types";
@@ -17,6 +26,98 @@ interface KanbanBoardProps {
   onReorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
   onTaskClick: (taskId: number) => void;
   onDeleteTask: (taskId: number) => void;
+}
+
+interface BoardColumn {
+  id: TaskStatus;
+  tasks: Task[];
+}
+
+export type DropAction =
+  | { kind: "move"; taskId: number; status: TaskStatus; position: number }
+  | { kind: "reorder"; taskId: number; position: number; status: TaskStatus }
+  | { kind: "blocked" }
+  | { kind: "none" };
+
+/**
+ * Decide what a drop means, with no side effects. Kept separate from the drag
+ * handlers so the rules are testable without a live drag.
+ */
+export function resolveDrop(taskId: number, overId: string | number, columns: BoardColumn[]): DropAction {
+  const allTasks = columns.flatMap((c) => c.tasks);
+  const dragged = allTasks.find((t) => t.id === taskId);
+  if (!dragged) return { kind: "none" };
+
+  const targetStatus = Object.values(TaskStatus).find((s) => s === overId);
+
+  if (targetStatus) {
+    // Dropping back into the card's own column is not a move.
+    if (dragged.status === targetStatus) return { kind: "none" };
+
+    // A BLOCKED task may not enter IN_PROGRESS. Refusing here keeps the
+    // dependency rule legible on the board instead of surfacing as a server
+    // rejection after the card has already travelled there.
+    if (dragged.readiness === "BLOCKED" && targetStatus === "IN_PROGRESS") {
+      return { kind: "blocked" };
+    }
+
+    const column = columns.find((c) => c.id === targetStatus);
+    return {
+      kind: "move",
+      taskId,
+      status: targetStatus,
+      position: column?.tasks.length ?? 0,
+    };
+  }
+
+  const overTaskId = Number(overId);
+  if (!Number.isInteger(overTaskId)) return { kind: "none" };
+
+  const overTask = allTasks.find((t) => t.id === overTaskId);
+  if (!overTask || overTask.status !== dragged.status) return { kind: "none" };
+
+  const column = columns.find((c) => c.id === dragged.status);
+  if (!column) return { kind: "none" };
+
+  const activeIndex = column.tasks.findIndex((t) => t.id === taskId);
+  const overIndex = column.tasks.findIndex((t) => t.id === overTaskId);
+  if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return { kind: "none" };
+
+  return { kind: "reorder", taskId, position: overIndex, status: dragged.status };
+}
+
+interface DropDeps {
+  onMoveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
+  onReorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
+  toast: (options: { type: "success" | "error" | "info"; message: string }) => void;
+}
+
+/**
+ * Carry out a resolved drop. Only the board's own refusals are announced here:
+ * useBoard already reports the server's verdict on success and on failure, so
+ * reporting either of those again would stack two toasts on one drag.
+ */
+export async function performDrop(action: DropAction, deps: DropDeps): Promise<void> {
+  if (action.kind === "none") return;
+
+  if (action.kind === "blocked") {
+    deps.toast({
+      type: "error",
+      message: "This task is blocked — finish its prerequisites before starting it.",
+    });
+    return;
+  }
+
+  try {
+    if (action.kind === "move") {
+      await deps.onMoveTask(action.taskId, action.status, action.position);
+    } else {
+      await deps.onReorderTask(action.taskId, action.position, action.status);
+    }
+  } catch {
+    // Intentionally silent: useBoard holds the server's message and has already
+    // rolled the card back.
+  }
 }
 
 export function KanbanBoard({
@@ -42,57 +143,18 @@ export function KanbanBoard({
     [activeId, columns]
   );
 
-  const handleDragStart = useCallback((event: any) => {
-    setActiveId(event.active.id);
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as number);
   }, []);
 
   const handleDragEnd = useCallback(
-    async (event: any) => {
+    async (event: DragEndEvent) => {
       setActiveId(null);
       const { active, over } = event;
-
       if (!over) return;
 
-      const taskId = Number(active.id);
-      const overId = over.id;
-
-      const targetStatus = Object.values(TaskStatus).find((s) => s === overId);
-      const targetTaskId = targetStatus ? null : Number(overId);
-
-      if (targetStatus) {
-        const column = columns.find((c) => c.id === targetStatus);
-        const targetPosition = column?.tasks.length ?? 0;
-
-        try {
-          await onMoveTask(taskId, targetStatus, targetPosition);
-          toast({ type: "success", message: `Task moved to ${targetStatus.replace("_", " ")}` });
-        } catch (err: any) {
-          toast({ type: "error", message: err?.error?.message ?? "Move failed" });
-        }
-        return;
-      }
-
-      if (targetTaskId) {
-        const activeTask = columns.flatMap((c) => c.tasks).find((t) => t.id === taskId);
-        const overTask = columns.flatMap((c) => c.tasks).find((t) => t.id === targetTaskId);
-
-        if (!activeTask || !overTask || activeTask.status !== overTask.status) return;
-
-        const currentColumn = columns.find((c) => c.id === activeTask.status);
-        if (!currentColumn) return;
-
-        const activeIndex = currentColumn.tasks.findIndex((t) => t.id === taskId);
-        const overIndex = currentColumn.tasks.findIndex((t) => t.id === targetTaskId);
-
-        if (activeIndex === -1 || overIndex === -1) return;
-
-        try {
-          await onReorderTask(taskId, overIndex, activeTask.status);
-          toast({ type: "success", message: "Task reordered" });
-        } catch (err: any) {
-          toast({ type: "error", message: err?.error?.message ?? "Reorder failed" });
-        }
-      }
+      const action = resolveDrop(Number(active.id), over.id, columns);
+      await performDrop(action, { onMoveTask, onReorderTask, toast });
     },
     [columns, onMoveTask, onReorderTask, toast]
   );
