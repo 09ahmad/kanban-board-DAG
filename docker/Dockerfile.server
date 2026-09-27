@@ -2,13 +2,15 @@
 # Runs TypeScript directly with Bun
 FROM oven/bun:1.2-alpine AS base
 
-# Install runtime dependencies
-RUN apk add --no-cache python3 make g++ postgresql-client
+# Install runtime dependencies needed for native modules and Prisma
+RUN apk add --no-cache python3 make g++ postgresql-client openssl
 
 WORKDIR /app
 
 # Copy workspace configuration files
-COPY package.json bun.lock turbo.json ./
+COPY package.json bun.lock turbo.json bunfig.toml ./
+
+# Copy package.json files for all workspace members consumed by the server
 COPY apps/server/package.json ./apps/server/
 COPY packages/db/package.json ./packages/db/
 COPY packages/queue/package.json ./packages/queue/

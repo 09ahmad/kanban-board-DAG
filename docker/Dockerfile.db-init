@@ -1,14 +1,16 @@
 # Dockerfile for TaskFlow Pro Database Initialization
-# Runs Prisma migrations and seed (one-shot)
+# Runs Prisma migrations and seed (one-shot container)
 FROM oven/bun:1.2-alpine AS base
 
-# Install runtime dependencies
-RUN apk add --no-cache python3 make g++ postgresql-client
+# Install runtime dependencies needed for Prisma and native modules
+RUN apk add --no-cache python3 make g++ postgresql-client openssl
 
 WORKDIR /app
 
 # Copy workspace configuration files
-COPY package.json bun.lock turbo.json ./
+COPY package.json bun.lock turbo.json bunfig.toml ./
+
+# Copy package.json files for all workspace members needed for db init
 COPY packages/db/package.json ./packages/db/
 COPY packages/types/package.json ./packages/types/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
@@ -24,5 +26,5 @@ COPY packages/typescript-config ./packages/typescript-config
 # Generate Prisma client
 RUN cd packages/db && bunx prisma generate
 
-# Run migrations and seed
-CMD ["sh", "-c", "cd packages/db && bunx prisma migrate deploy && bunx prisma db seed"]
+# Run migrations then seed using prisma.config.ts which points to prisma/seed.ts
+CMD ["sh", "-c", "cd packages/db && bunx prisma migrate deploy && bun run prisma/seed.ts"]
