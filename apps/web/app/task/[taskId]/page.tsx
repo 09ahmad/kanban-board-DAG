@@ -15,6 +15,7 @@ import { TaskStatus } from "@repo/types";
 import { useRouter } from "next/navigation";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useToast } from "@/components/toaster";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { TaskEventType } from "@repo/types";
 import { use } from "react";
 
@@ -62,10 +63,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
   const [duration, setDuration] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    fetchTask();
-  }, [taskId]);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const fetchTask = async () => {
     try {
@@ -78,8 +76,29 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       setPlannedStart(taskData.plannedStart ? new Date(taskData.plannedStart).toISOString().slice(0, 10) : "");
       setDuration(taskData.duration ? String(taskData.duration) : "");
 
-      // Derive prerequisites/dependents from the project graph
-      const graphRes = await apiClient<GraphData>(`/projects/${taskData.projectId}/graph`);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.error?.message ?? "Failed to load task");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Prerequisites and dependents are derived from the project graph rather than
+   * from a task payload, so this is a second request — and it is the only part
+   * of the page that the graph can change. Task events leave it alone; a
+   * refetching the whole graph on every TASK_MOVED was most of the traffic this
+   * page generated.
+   */
+  useEffect(() => {
+    fetchTask();
+  }, [taskId]);
+
+  const fetchDependencies = useCallback(async () => {
+    if (!task?.projectId) return;
+    try {
+      const graphRes = await apiClient<GraphData>(`/projects/${task.projectId}/graph`);
       const graphData = unwrapResponse(graphRes);
       const taskMap = new Map(graphData.tasks.map((t) => [t.id, t]));
 
@@ -103,13 +122,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       setDependents(nextDependents);
       setPrereqTasks(prereqMap);
       setDependentTasks(dependentMap);
-      setError(null);
-    } catch (err: any) {
-      setError(err?.error?.message ?? "Failed to load task");
-    } finally {
-      setLoading(false);
+    } catch {
+      // The task itself is already on screen; a failed graph read should not
+      // replace it with an error, it just leaves the lists as they were.
     }
-  };
+  }, [taskId, task?.projectId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -138,6 +155,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
 
   const handleDeleteTask = async () => {
     setDeleting(true);
+    setConfirmingDelete(false);
     try {
       await apiClient(`/tasks/${taskId}`, { method: "DELETE" });
       toast({ type: "success", message: "Task deleted" });
@@ -166,15 +184,23 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
       case "TASK_MOVED":
       case "TASK_READY":
       case "TASK_BLOCKED":
+        // The task moved; the edges around it did not.
+        fetchTask();
+        break;
       case "DEPENDENCY_ADDED":
       case "DEPENDENCY_REMOVED":
         fetchTask();
+        fetchDependencies();
         break;
       case "TASK_DELETED":
         router.push("/projects");
         break;
     }
-  }, [taskId, router, fetchTask]);
+  }, [taskId, router, fetchTask, fetchDependencies]);
+
+  useEffect(() => {
+    void fetchDependencies();
+  }, [fetchDependencies]);
 
   // Only subscribe to WebSocket after task loads and we have projectId
   const projectId = task?.projectId;
@@ -185,7 +211,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
     // at all, so a reconnect has to re-read the task.
     useCallback(() => {
       void fetchTask();
-    }, [fetchTask])
+      void fetchDependencies();
+    }, [fetchTask, fetchDependencies])
   );
 
   if (loading) {
@@ -246,7 +273,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
             ) : (
               <>
                 <Button onClick={() => setEditing(true)}>Edit</Button>
-                <Button variant="danger" onClick={handleDeleteTask} disabled={deleting}>
+                <Button variant="danger" onClick={() => setConfirmingDelete(true)} disabled={deleting}>
                   {deleting ? "Deleting…" : "Delete"}
                 </Button>
               </>
@@ -421,6 +448,20 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete this task?"
+        body={
+          dependents.length > 0
+            ? `${dependents.length} task${dependents.length === 1 ? "" : "s"} depend${dependents.length === 1 ? "s" : ""} on it. Deleting it removes those links, and anything downstream becomes unblocked.`
+            : "This cannot be undone."
+        }
+        confirmLabel="Delete task"
+        busy={deleting}
+        onConfirm={handleDeleteTask}
+        onCancel={() => setConfirmingDelete(false)}
+      />
     </AppLayout>
   );
 }
