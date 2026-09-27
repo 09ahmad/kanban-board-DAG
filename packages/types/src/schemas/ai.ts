@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const AiSuggestionItemSchema = z.object({
+  id: z.number().int().positive(),
   prerequisiteTaskId: z.number().int().positive(),
   confidence: z.number().min(0).max(1),
   reason: z.string().optional(),

@@ -51,6 +51,7 @@ export interface TaskDependencyDto {
 }
 
 export interface AiSuggestionItemDto {
+  id: number;
   prerequisiteTaskId: number;
   confidence: number;
   reason?: string | null;

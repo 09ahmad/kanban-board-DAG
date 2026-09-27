@@ -155,6 +155,22 @@ async function main() {
         computedEnd: undefined,
       }
     }),
+    // REVIEW task. Its only prerequisite is DONE, so it is READY — workflow state
+    // and dependency state are independent, which is the point of the product.
+    await prisma.task.create({
+      data: {
+        projectId: project1.id,
+        title: 'Requirements Sign-off',
+        description: 'Client review of the research findings and project scope',
+        status: 'REVIEW',
+        readiness: 'READY',
+        position: 0,
+        plannedStart: new Date('2026-09-04'),
+        duration: 1,
+        computedStart: new Date('2026-09-04'),
+        computedEnd: new Date('2026-09-05'),
+      }
+    }),
   ]
 
   // Create task dependencies for project1
@@ -166,6 +182,7 @@ async function main() {
       { prerequisiteTaskId: tasks[2].id, dependentTaskId: tasks[4].id }, // Frontend → Testing
       { prerequisiteTaskId: tasks[3].id, dependentTaskId: tasks[4].id }, // Backend → Testing
       { prerequisiteTaskId: tasks[4].id, dependentTaskId: tasks[5].id }, // Testing → Deployment
+      { prerequisiteTaskId: tasks[0].id, dependentTaskId: tasks[6].id }, // Research → Sign-off
     ]
   })
 
@@ -269,6 +286,22 @@ async function main() {
         computedEnd: undefined,
       }
     }),
+    // REVIEW task waiting on a human. Its only prerequisite (App Architecture) is
+    // DONE, so it is READY.
+    await prisma.task.create({
+      data: {
+        projectId: project2.id,
+        title: 'Architecture Sign-off',
+        description: 'Tech lead review of the proposed app architecture',
+        status: 'REVIEW',
+        readiness: 'READY',
+        position: 0,
+        plannedStart: new Date('2026-09-07'),
+        duration: 1,
+        computedStart: new Date('2026-09-07'),
+        computedEnd: new Date('2026-09-08'),
+      }
+    }),
   ]
 
   // Create task dependencies for project2
@@ -281,6 +314,7 @@ async function main() {
       { prerequisiteTaskId: mobileTasks[3].id, dependentTaskId: mobileTasks[5].id }, // iOS Dev → Testing
       { prerequisiteTaskId: mobileTasks[4].id, dependentTaskId: mobileTasks[5].id }, // Android Dev → Testing
       { prerequisiteTaskId: mobileTasks[5].id, dependentTaskId: mobileTasks[6].id }, // Testing → Submission
+      { prerequisiteTaskId: mobileTasks[1].id, dependentTaskId: mobileTasks[7].id }, // Architecture → Sign-off
     ]
   })
 

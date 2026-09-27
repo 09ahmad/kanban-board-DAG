@@ -2,7 +2,15 @@
 // Domain type interfaces
 // ─────────────────────────────────────────────
 
-import { TaskStatus, ReadinessState } from "./enums.ts";
+import { TaskStatus, ReadinessState, ProjectRole } from "./enums.ts";
+
+export interface ProjectMember {
+  id: number;
+  projectId: number;
+  userId: number;
+  role: ProjectRole;
+  joinedAt?: string;
+}
 
 export interface Project {
   id: number;
@@ -10,19 +18,8 @@ export interface Project {
   description?: string | null;
   ownerId: number;
   createdAt?: string;
-  members?: { id: number; role: string }[];
-  tasks?: Array<{
-    id: number;
-    title: string;
-    description?: string | null;
-    status: TaskStatus;
-    readiness: ReadinessState;
-    plannedStart?: string | null;
-    duration?: number | null;
-    computedStart?: string | null;
-    computedEnd?: string | null;
-    position: number;
-  }>;
+  members?: ProjectMember[];
+  tasks?: Task[];
 }
 
 export interface Task {
@@ -47,6 +44,44 @@ export interface TaskDependency {
   prerequisiteTaskId: number;
   dependentTaskId: number;
 }
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  plannedStart?: string | null;
+  duration?: number;
+}
+
+export interface CriticalPathResult {
+  criticalTaskIds: number[];
+  criticalEdges: Array<{ prerequisiteTaskId: number; dependentTaskId: number }>;
+  totalDurationDays: number;
+}
+
+export interface TaskEvent {
+  id: number;
+  projectId: number;
+  taskId?: number | null;
+  actorId?: number | null;
+  type: TaskEventType;
+  payload?: Record<string, unknown> | null;
+  createdAt: string | Date;
+}
+
+export type TaskEventType = 
+  | "TASK_CREATED"
+  | "TASK_UPDATED"
+  | "TASK_MOVED"
+  | "TASK_DELETED"
+  | "TASK_READY"
+  | "TASK_BLOCKED"
+  | "DEPENDENCY_ADDED"
+  | "DEPENDENCY_REMOVED"
+  | "SCHEDULE_CHANGED"
+  | "GRAPH_UPDATED"
+  | "AI_SUGGESTION_CREATED"
+  | "AI_SUGGESTION_ACCEPTED"
+  | "AI_SUGGESTION_REJECTED";
 
 // ─────────────────────────────────────────────
 // Re-exports
