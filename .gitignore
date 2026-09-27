@@ -45,3 +45,8 @@ IMPLEMENTATION.md
 # Binary docs (not for git)
 *.xlsx
 TaskFlow_Pro_Synopsis_v6.xlsx
+
+# Working notes / audit reports (not for git)
+frontend-dag-audit-report.md
+REMAINING_GAPS.md
+FRONTEND_ANALYSIS.md
