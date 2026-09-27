@@ -51,6 +51,13 @@ export function useAiSuggestions({ projectId, taskId, pollIntervalMs = POLL_INTE
     };
   }, []);
 
+  // A run may have finished out of process before this panel ever opened, so
+  // an existing pending list is read as soon as the task is picked — waiting
+  // for a Generate click would hide work that is already done.
+  useEffect(() => {
+    if (taskId !== undefined) void poll();
+  }, [taskId, poll]);
+
   const generate = useCallback(async () => {
     setError(null);
     try {

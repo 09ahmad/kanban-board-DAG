@@ -15,6 +15,7 @@ import { DependencyList } from "@/components/kanban-board/dependency-list";
 import { CriticalPathDisplay } from "@/components/critical-path-display";
 import { ProjectEvents } from "@/components/project-events";
 import { MembersAvatarRow } from "@/components/members-avatar-row";
+import { AiSuggestions } from "@/components/ai-suggestions";
 import type { TaskEventType, Task, CriticalPathResult } from "@repo/types";
 import { BoardSkeleton } from "@/components/ui/skeleton";
 
@@ -51,7 +52,8 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   const [showCreate, setShowCreate] = useState(false);
   const [showDependencyModal, setShowDependencyModal] = useState(false);
   const [showDependencyList, setShowDependencyList] = useState(false);
-  const [activeTab, setActiveTab] = useState<"board" | "critical-path" | "events">("board");
+  const [activeTab, setActiveTab] = useState<"board" | "critical-path" | "events" | "ai">("board");
+  const [aiTaskId, setAiTaskId] = useState<number | null>(null);
   const [criticalPath, setCriticalPath] = useState<CriticalPathResult | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ task: Task; dependents: Task[] } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -296,7 +298,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-hairline">
-          {(["board", "critical-path", "events"] as const).map((tab) => (
+          {(["board", "critical-path", "events", "ai"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -307,7 +309,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
                   : "text-muted hover:text-ink"
               }`}
             >
-              {tab === "board" ? "Board" : tab === "critical-path" ? "Critical Path" : "Activity"}
+              {tab === "board" ? "Board" : tab === "critical-path" ? "Critical Path" : tab === "events" ? "Activity" : "AI Suggestions"}
             </button>
           ))}
         </div>
@@ -393,6 +395,36 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
         )}
 
         {activeTab === "events" && <ProjectEvents projectId={projectId} />}
+
+        {activeTab === "ai" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+              <div className="flex-1">
+                <label htmlFor="ai-task-picker" className="block text-sm font-medium text-ink mb-1">
+                  Generate suggestions for
+                </label>
+                <select
+                  id="ai-task-picker"
+                  value={aiTaskId ?? ""}
+                  onChange={(e) => setAiTaskId(e.target.value === "" ? null : Number(e.target.value))}
+                  aria-label="Pick the task to generate dependency suggestions for"
+                  className="input w-full sm:max-w-md"
+                >
+                  {allTasks.length === 0 && <option value="">No tasks yet — create one first</option>}
+                  {allTasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {aiTaskId !== null && (
+              <AiSuggestions projectId={projectId} taskId={aiTaskId} />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Task Detail Modal */}

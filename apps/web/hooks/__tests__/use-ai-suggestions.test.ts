@@ -81,13 +81,17 @@ describe("useAiSuggestions", () => {
     serveRun({ suggestions: [suggestion], status: "completed" });
     const { result } = renderHook(() => useAiSuggestions({ projectId: 1, taskId: 5, pollIntervalMs: 5 }));
 
+    // The panel reads an existing pending list as soon as the task is picked,
+    // so the suggestions are on screen before Generate is even clicked.
+    await waitFor(() => expect(result.current.suggestions).toHaveLength(1));
+
     await act(async () => {
       await result.current.generate();
     });
 
-    await waitFor(() => expect(result.current.suggestions).toHaveLength(1));
+    // The run settles through a poll, not the POST itself.
+    await waitFor(() => expect(result.current.busy).toBe(false));
     expect(result.current.suggestions[0]!.id).toBe(7);
-    expect(result.current.busy).toBe(false);
   });
 
   test("a failed run stops the spinner and explains itself", async () => {
