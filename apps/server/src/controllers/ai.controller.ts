@@ -3,9 +3,18 @@ import { aiService } from "../services/ai.service.js";
 
 export const aiController = {
   generate: async (req: Request, res: Response) => {
-    const data = await aiService.generateSuggestions(
+    const data = await aiService.enqueueSuggestions(
       Number(req.params.projectId),
       Number(req.body.taskId),
+      req.user!.userId,
+    );
+    // The LLM call is a background job, so there is nothing to return yet.
+    res.status(202).json({ success: true, data });
+  },
+  listSuggestions: async (req: Request, res: Response) => {
+    const data = await aiService.getSuggestions(
+      Number(req.params.projectId),
+      Number(req.query.taskId),
       req.user!.userId,
     );
     res.json({ success: true, data });

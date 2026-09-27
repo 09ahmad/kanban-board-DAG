@@ -1,16 +1,49 @@
 import { prisma } from "@repo/db/client";
-import { ConflictError, NotFoundError } from "../lib/errors.js";
-import { createAiProvider } from "../lib/ai-provider.js";
+import { enqueueSuggestionJob, getSuggestionRunState, type SuggestionRunState } from "@repo/queue";
+import { NotFoundError, ConflictError } from "../lib/errors.js";
+import { createAiProvider, type AiProvider } from "../lib/ai-provider.js";
 import { dependencyService } from "./dependency.service.js";
 import { projectService } from "./project.service.js";
 import { taskService } from "./task.service.js";
 import type { AiSuggestion, Task, Prisma } from "@repo/db/generated/prisma/client";
 
-const aiProvider = createAiProvider();
+let aiProvider: AiProvider = createAiProvider();
+
+/** Lets a test drive the queue without an LLM behind it. */
+export function setAiProvider(provider: AiProvider): void {
+  aiProvider = provider;
+}
 
 export class AiService {
-  async generateSuggestions(projectId: number, taskId: number, requesterId: number): Promise<{ suggestions: AiSuggestion[] }> {
-    const project = await projectService.getProject(projectId, requesterId);
+  /**
+   * Access is settled here, before the work is handed off: by the time the
+   * worker runs, the requester's membership is irrelevant to the LLM call.
+   */
+  async enqueueSuggestions(projectId: number, taskId: number, requesterId: number): Promise<{ queued: true; jobId: string }> {
+    await projectService.requireMember(projectId, requesterId);
+    const task = await prisma.task.findFirst({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundError("Task");
+
+    const jobId = await enqueueSuggestionJob({ projectId, taskId, requesterId });
+    return { queued: true, jobId };
+  }
+
+  async getSuggestions(projectId: number, taskId: number, requesterId: number): Promise<{ suggestions: AiSuggestion[]; status: SuggestionRunState }> {
+    await projectService.requireMember(projectId, requesterId);
+    const task = await prisma.task.findFirst({ where: { id: taskId, projectId } });
+    if (!task) throw new NotFoundError("Task");
+
+    const [suggestions, status] = await Promise.all([
+      prisma.aiSuggestion.findMany({ where: { taskId, status: "PENDING" } }),
+      getSuggestionRunState(taskId),
+    ]);
+    return { suggestions, status };
+  }
+
+  /** Runs inside the BullMQ worker, never in an HTTP request. */
+  async processSuggestionJob({ projectId, taskId }: { projectId: number; taskId: number; requesterId: number }): Promise<{ suggestions: AiSuggestion[] }> {
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new NotFoundError("Project");
     const tasks = await prisma.task.findMany({ where: { projectId } });
     const current = tasks.find((t) => t.id === taskId);
     if (!current) throw new NotFoundError("Task");

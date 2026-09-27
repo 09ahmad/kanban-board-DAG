@@ -44,3 +44,23 @@ export const SuggestionIdParamsSchema = z.object({
 export const GenerateSuggestionsSchema = z.object({
   taskId: z.number().int().positive(),
 });
+
+/** `queued`/`running` mean the LLM call is still outstanding. */
+export const SuggestionRunStateSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+]);
+export type SuggestionRunStateDto = z.infer<typeof SuggestionRunStateSchema>;
+
+export const TaskSuggestionsQuerySchema = z.object({
+  taskId: z.coerce.number().int().positive(),
+});
+
+/** What a poller reads while a background run is outstanding. */
+export const SuggestionRunSchema = z.object({
+  suggestions: z.array(AiSuggestionItemSchema),
+  status: SuggestionRunStateSchema,
+});
+export type SuggestionRun = z.infer<typeof SuggestionRunSchema>;

@@ -26,7 +26,7 @@ kanban-board/
 - **DAG Engine** (`apps/server/src/engine/`) — pure TypeScript, zero I/O: topological sort (Kahn), cycle detection (DFS), readiness recalculation (transitive closure), finish-to-start scheduler (CPM), critical path (longest path).
 - **REST API** (`apps/server/src/routes/`, `controllers/`, `services/`) — thin controllers, business logic in services, JWT auth (`jsonwebtoken` + `bcryptjs`), Zod validation (`packages/types/src/schemas/`).
 - **WebSocket** (`apps/ws-server/`) — independent Node `ws` server subscribing to `@repo/queue` Redis Pub/Sub; pushes `TASK_UPDATED`/`TASK_MOVED`/`TASK_READY`/`TASK_BLOCKED`/`DEPENDENCY_ADDED`/etc. events to clients via `PROJECT_SUBSCRIBE`.
-- **Queue** (`packages/queue/`) — `ioredis` for Pub/Sub, BullMQ for background jobs (`ai-suggestions-queue`, `dag-recalc-queue`).
+- **Queue** (`packages/queue/`) — `ioredis` for Pub/Sub, BullMQ for background jobs (`ai-suggestions`, `dag-recalc-queue`). The `ai-suggestions` worker is hosted in `apps/server/src/workers/ai-suggestion.worker.ts` because its processor needs Prisma and the LLM provider.
 - **Database** (`packages/db/`) — Prisma 7 schema at `prisma/schema.prisma`; singleton `PrismaClient` exported from `@repo/db/client`.
 
 ### Dependency Semantics
@@ -66,8 +66,8 @@ kanban-board/
 
 - **Auth simplification**: `localStorage` JWT storage (documented simplification, not production-grade). No refresh-token rotation.
 - **WebSocket reliability**: One connection per board page; no automatic reconnect with exponential backoff implemented in this build.
-- **AI integration**: Graceful degradation — if LLM API is unavailable, suggestions are skipped; no fallback model cascade.
+- **AI integration**: Graceful degradation — if LLM API is unavailable, suggestions are skipped; no fallback model cascade. Generation runs in a BullMQ worker, so the client polls `GET /projects/:id/ai/dependency-suggestions?taskId=` until the run reports `completed` or `failed`.
 - **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop (dnd-kit) not fully validated on all mobile browsers.
 - **Performance**: Critical-path recalculation is O(V+E) per mutation; for very large graphs (>1000 tasks) this may need caching or incremental updates.
 - **No multi-region Redis clustering** configured; single Redis instance used for Pub/Sub.
-- **No circuit breaker / retry logic** on BullMQ background jobs (AI queue).
+- **AI job retries**: the worker retries a failed run twice with exponential backoff; there is no circuit breaker.

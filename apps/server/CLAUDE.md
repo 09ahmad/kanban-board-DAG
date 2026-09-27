@@ -56,7 +56,8 @@ apps/server/
 │   │       └── critical-path.test.ts
 │   ├── routes/          # Express router modules (/auth, /projects, /tasks, /dependencies, /ai)
 │   ├── controllers/     # Thin controllers (no business logic; Zod validation & service invocation)
-│   ├── services/        # Business logic (AuthService, ProjectService, TaskService, DependencyService, AiService)
+│   ├── services/     # Business logic (AuthService, ProjectService, TaskService, DependencyService, AiService)
+│   ├── workers/      # BullMQ workers hosted by this service (ai-suggestion.worker.ts)
 │   ├── middleware/      # authMiddleware, errorHandler, validateRequest
 │   ├── config/          # Environment variables and app configuration
 │   └── index.ts         # Server startup & shutdown handling
@@ -124,7 +125,7 @@ The DAG engine inside `apps/server/src/engine/` is a pure TypeScript domain modu
 - **Tasks**: `POST /api/v1/projects/:projectId/tasks`, `GET /api/v1/projects/:projectId/tasks`, `GET /api/v1/tasks/:taskId`, `PATCH /api/v1/tasks/:taskId`, `PATCH /api/v1/tasks/:taskId/move`, `DELETE /api/v1/tasks/:taskId`
 - **Dependencies**: `POST /api/v1/projects/:projectId/dependencies`, `DELETE /api/v1/dependencies/:dependencyId`
 - **Graph & Critical Path**: `GET /api/v1/projects/:projectId/graph`, `GET /api/v1/projects/:projectId/critical-path`
-- **AI Suggestions**: `POST /api/v1/projects/:projectId/ai/dependency-suggestions`, `POST /api/v1/ai/suggestions/:suggestionId/accept`, `POST /api/v1/ai/suggestions/:suggestionId/reject`
+- **AI Suggestions**: `POST /api/v1/projects/:projectId/ai/dependency-suggestions` (enqueues a background run, returns `202`), `GET /api/v1/projects/:projectId/ai/dependency-suggestions?taskId=` (polls `{ suggestions, status }`), `POST /api/v1/ai/suggestions/:suggestionId/accept`, `POST /api/v1/ai/suggestions/:suggestionId/reject`
 - **Health**: `GET /health`, `GET /ready`
 
 ---

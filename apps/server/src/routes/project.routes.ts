@@ -8,6 +8,7 @@ import {
   MemberParamsSchema,
   ProjectEventsQuerySchema,
   ProjectIdParamsSchema,
+  TaskSuggestionsQuerySchema,
   UpdateProjectSchema,
 } from "@repo/types";
 import { aiController } from "../controllers/ai.controller.js";
@@ -89,4 +90,10 @@ projectRouter.post(
   validate(ProjectIdParamsSchema, "params"),
   validate(GenerateSuggestionsSchema),
   asyncHandler(aiController.generate),
+);
+projectRouter.get(
+  "/:projectId/ai/dependency-suggestions",
+  validate(ProjectIdParamsSchema, "params"),
+  validate(TaskSuggestionsQuerySchema, "query"),
+  asyncHandler(aiController.listSuggestions),
 );

@@ -1,8 +1,7 @@
-import { useState, useCallback } from "react";
-import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { useAiSuggestions } from "@/hooks/use-ai-suggestions";
 import type { AiSuggestionItem } from "@repo/types";
 
 interface AiSuggestionsProps {
@@ -11,59 +10,10 @@ interface AiSuggestionsProps {
 }
 
 export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
-  const [suggestions, setSuggestions] = useState<AiSuggestionItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const generate = useCallback(async () => {
-    setGenerating(true);
-    setError(null);
-    try {
-      const res = await apiClient<{ suggestions: AiSuggestionItem[] }>(
-        `/projects/${projectId}/ai/dependency-suggestions`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ taskId }),
-        }
-      );
-      const data = unwrapResponse(res);
-      setSuggestions(data.suggestions);
-    } catch (err: any) {
-      setError(err?.error?.message ?? "Failed to generate suggestions");
-    } finally {
-      setGenerating(false);
-    }
-  }, [projectId, taskId]);
-
-  const accept = useCallback(
-    async (suggestion: AiSuggestionItem) => {
-      try {
-        await apiClient(`/ai/suggestions/${suggestion.id}/accept`, {
-          method: "POST",
-        });
-        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
-      } catch (err: any) {
-        setError(err?.error?.message ?? "Accept failed");
-      }
-    },
-    []
-  );
-
-  const reject = useCallback(
-    async (suggestion: AiSuggestionItem) => {
-      try {
-        await apiClient(`/ai/suggestions/${suggestion.id}/reject`, {
-          method: "POST",
-        });
-        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
-      } catch (err: any) {
-        setError(err?.error?.message ?? "Reject failed");
-      }
-    },
-    []
-  );
+  const { suggestions, busy, error, generate, accept, reject } = useAiSuggestions({
+    projectId,
+    taskId,
+  });
 
   return (
     <Card className="space-y-4">
@@ -73,9 +23,9 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
           variant="secondary"
           size="sm"
           onClick={generate}
-          disabled={generating}
+          disabled={busy}
         >
-          {generating ? "Generating…" : "Generate"}
+          {busy ? "Generating…" : "Generate"}
         </Button>
       </div>
 
@@ -85,14 +35,14 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
         </div>
       )}
 
-      {suggestions.length === 0 && !generating && (
+      {suggestions.length === 0 && !busy && (
         <p className="text-body text-[14px] text-muted">
           No suggestions right now. Click Generate to see AI-proposed dependencies.
         </p>
       )}
 
       <div className="space-y-3">
-        {suggestions.map((suggestion) => (
+        {suggestions.map((suggestion: AiSuggestionItem) => (
           <div
             key={suggestion.id}
             className="bg-surface-soft rounded-lg p-4 border border-hairline"
