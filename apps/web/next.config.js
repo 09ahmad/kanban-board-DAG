@@ -21,7 +21,7 @@ const wsInternalUrl = process.env.WS_INTERNAL_URL || "http://ws-server:4001";
 
 const nextConfig = {
   transpilePackages: ['@repo/types'],
-  output: 'standalone',
+  ...(process.env.NEXT_STANDALONE === "true" ? { output: "standalone" } : {}),
   async rewrites() {
     const routes = [];
 
