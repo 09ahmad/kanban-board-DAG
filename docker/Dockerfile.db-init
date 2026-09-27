@@ -1,55 +1,28 @@
-# Dockerfile for Database Initialization (Prisma migrations + seed)
-# Runs once to set up the database schema and seed data
-FROM oven/bun:1.2-alpine
+# Dockerfile for TaskFlow Pro Database Initialization
+# Runs Prisma migrations and seed (one-shot)
+FROM oven/bun:1.2-alpine AS base
 
-# Install dependencies for native modules (Prisma PostgreSQL adapter)
+# Install runtime dependencies
 RUN apk add --no-cache python3 make g++ postgresql-client
 
 WORKDIR /app
 
-# Copy package files
+# Copy workspace configuration files
 COPY package.json bun.lock turbo.json ./
 COPY packages/db/package.json ./packages/db/
 COPY packages/types/package.json ./packages/types/
-COPY packages/queue/package.json ./packages/queue/
-COPY packages/ui/package.json ./packages/ui/
-COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 
 # Install dependencies
 RUN bun install
 
-# Copy Prisma schema and configuration
-COPY packages/db/prisma ./packages/db/prisma
-COPY packages/db/prisma.config.ts ./packages/db/
-COPY packages/types/src ./packages/types/src
+# Copy source code
+COPY packages/db ./packages/db
+COPY packages/types ./packages/types
+COPY packages/typescript-config ./packages/typescript-config
 
 # Generate Prisma client
 RUN cd packages/db && bunx prisma generate
 
-# Copy seed script
-COPY packages/db/prisma/seed.ts ./packages/db/prisma/
-
-# Create entrypoint script
-RUN cat > /entrypoint.sh << 'SCRIPT'
-#!/bin/sh
-set -e
-
-echo "Waiting for PostgreSQL..."
-until pg_isready -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER"; do
-  sleep 2
-done
-
-echo "PostgreSQL is ready. Running migrations..."
-cd /app/packages/db
-bunx prisma migrate deploy
-
-echo "Seeding database..."
-cd /app/packages/db
-bun run seed
-
-echo "Database initialization complete!"
-SCRIPT
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+# Run migrations and seed
+CMD ["sh", "-c", "cd packages/db && bunx prisma migrate deploy && bunx prisma db seed"]

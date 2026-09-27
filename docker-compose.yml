@@ -8,12 +8,6 @@
 #   server     - Express REST API (port 4000) + DAG engine
 #   ws-server  - WebSocket server (port 4001) via `ws` package
 #   web        - Next.js frontend (port 3000)
-#
-# Nginx reverse proxy is set up separately by the user.
-# Default frontend API URLs use relative paths (/api, /ws) so they work
-# behind any reverse proxy that forwards those prefixes.
-
-version: '3.8'
 
 services:
   # ── PostgreSQL Database ─────────────────────────────────────────────
@@ -26,7 +20,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-taskflow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -62,11 +55,6 @@ services:
     container_name: taskflow-db-init
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow}:${POSTGRES_PASSWORD:-taskflow}@postgres:5432/${POSTGRES_DB:-taskflow}
-      DATABASE_HOST: postgres
-      DATABASE_PORT: 5432
-      DATABASE_USER: ${POSTGRES_USER:-taskflow}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-taskflow}
-      DATABASE_NAME: ${POSTGRES_DB:-taskflow}
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,7 +72,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-taskflow}:${POSTGRES_PASSWORD:-taskflow}@postgres:5432/${POSTGRES_DB:-taskflow}
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}

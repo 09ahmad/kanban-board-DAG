@@ -2,8 +2,12 @@
 # Uses Next.js standalone output for minimal production image
 FROM oven/bun:1.2-alpine AS builder
 
+# Build args for Next.js public env vars (embedded at build time)
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WS_URL
+
 # Install system dependencies
-RUN apk add --no-cache python3 make g++ nodejs npm
+RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
@@ -28,7 +32,7 @@ COPY apps/web ./apps/web
 
 # Build the web app with standalone output
 WORKDIR /app/apps/web
-RUN bunx next build --output=standalone
+RUN NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL} bunx next build --output=standalone
 
 # Production stage
 FROM oven/bun:1.2-alpine AS production
