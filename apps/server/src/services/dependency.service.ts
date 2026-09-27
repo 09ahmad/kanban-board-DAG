@@ -14,7 +14,7 @@ import {
   SelfDependencyError,
 } from "../lib/errors.js";
 import { projectService } from "./project.service.js";
-import { taskService } from "./task.service.js";
+import { taskService, type PendingGraphEvent } from "./task.service.js";
 import type { Task, TaskDependency, TaskEvent, Prisma } from "@repo/db/generated/prisma/client";
 
 type GraphSnapshot = { tasks: Task[]; dependencies: TaskDependency[] };
@@ -52,6 +52,7 @@ export class DependencyService {
       throw err;
     }
 
+    let pending: PendingGraphEvent[] = [];
     const graph = await prisma.$transaction(async (tx) => {
       await tx.taskDependency.create({
         data: {
@@ -68,11 +69,12 @@ export class DependencyService {
           payload: dto as Prisma.InputJsonValue,
         },
       });
-      await taskService._recomputeProject(tx, projectId, userId);
+      pending = await taskService._recomputeProject(tx, projectId, userId);
       return this._snapshot(tx, projectId);
     });
 
     await this._emit("DEPENDENCY_ADDED", projectId, dto.dependentTaskId, dto);
+    await taskService._emitPending(projectId, pending);
     await this._emit("GRAPH_UPDATED", projectId, undefined, {});
     return graph;
   }
@@ -86,6 +88,7 @@ export class DependencyService {
     const projectId = dep.dependent.projectId;
     await projectService.requireMember(projectId, userId);
 
+    let pending: PendingGraphEvent[] = [];
     await prisma.$transaction(async (tx) => {
       await tx.taskDependency.delete({ where: { id: dependencyId } });
       await tx.taskEvent.create({
@@ -100,11 +103,13 @@ export class DependencyService {
           } as Prisma.InputJsonValue,
         },
       });
-      await taskService._recomputeProject(tx, projectId, userId);
+      pending = await taskService._recomputeProject(tx, projectId, userId);
     });
     await this._emit("DEPENDENCY_REMOVED", projectId, dep.dependentTaskId, {
       dependencyId,
     });
+    await taskService._emitPending(projectId, pending);
+    await this._emit("GRAPH_UPDATED", projectId, undefined, {});
   }
 
   async getProjectGraph(projectId: number, userId: number): Promise<GraphSnapshot> {

@@ -14,6 +14,20 @@ import type { Task, TaskEvent, Prisma } from "@repo/db/generated/prisma/client";
 
 type Tx = Pick<typeof prisma, "task" | "taskDependency" | "taskEvent">;
 
+/**
+ * A domain event derived while recomputing the graph inside a transaction.
+ *
+ * These are returned rather than published inline: `@repo/queue` must only see
+ * events for data that has actually committed. Callers publish them once the
+ * surrounding `prisma.$transaction` resolves.
+ */
+export type PendingGraphEvent = {
+  type: TaskEventType;
+  taskId: number;
+  payload: Record<string, unknown>;
+};
+
+
 function toGraphTask(task: {
   id: number;
   status: GraphTask["status"];
@@ -95,6 +109,7 @@ export class TaskService {
 
   async updateTask(taskId: number, dto: UpdateTaskDto, userId: number): Promise<Task> {
     const existing = await this.getTask(taskId, userId);
+    let pending: PendingGraphEvent[] = [];
     const updated = await prisma.$transaction(async (tx) => {
       await tx.task.update({
         where: { id: taskId },
@@ -113,7 +128,7 @@ export class TaskService {
         dto.duration !== undefined ||
         dto.status !== undefined
       ) {
-        await this._recomputeProject(tx, existing.projectId, userId);
+        pending = await this._recomputeProject(tx, existing.projectId, userId);
       }
       await tx.taskEvent.create({
         data: {
@@ -127,6 +142,7 @@ export class TaskService {
       return tx.task.findUniqueOrThrow({ where: { id: taskId } });
     });
     await this._emit("TASK_UPDATED", existing.projectId, taskId, dto as Record<string, unknown>);
+    await this._emitPending(existing.projectId, pending);
     return updated;
   }
 
@@ -135,6 +151,7 @@ export class TaskService {
     if (task.readiness === "BLOCKED" && dto.status === "IN_PROGRESS") {
       throw new BlockedTaskError();
     }
+    let pending: PendingGraphEvent[] = [];
     const moved = await prisma.$transaction(async (tx) => {
       await tx.task.update({
         where: { id: taskId },
@@ -144,7 +161,7 @@ export class TaskService {
           version: { increment: 1 },
         },
       });
-      await this._recomputeProject(tx, task.projectId, userId);
+      pending = await this._recomputeProject(tx, task.projectId, userId);
       await tx.taskEvent.create({
         data: {
           projectId: task.projectId,
@@ -160,14 +177,16 @@ export class TaskService {
       oldStatus: task.status,
       newStatus: dto.status,
     });
+    await this._emitPending(task.projectId, pending);
     return moved;
   }
 
   async deleteTask(taskId: number, userId: number): Promise<void> {
     const task = await this.getTask(taskId, userId);
+    let pending: PendingGraphEvent[] = [];
     await prisma.$transaction(async (tx) => {
       await tx.task.delete({ where: { id: taskId } });
-      await this._recomputeProject(tx, task.projectId, userId);
+      pending = await this._recomputeProject(tx, task.projectId, userId);
       await tx.taskEvent.create({
         data: {
           projectId: task.projectId,
@@ -178,6 +197,7 @@ export class TaskService {
       });
     });
     await this._emit("TASK_DELETED", task.projectId, taskId, { taskId });
+    await this._emitPending(task.projectId, pending);
   }
 
   async _loadGraph(
@@ -222,7 +242,11 @@ export class TaskService {
     }
   }
 
-  async _recomputeProject(tx: Tx, projectId: number, actorId?: number): Promise<void> {
+  async _recomputeProject(
+    tx: Tx,
+    projectId: number,
+    actorId?: number,
+  ): Promise<PendingGraphEvent[]> {
     const { tasks, edges } = await this._loadGraph(projectId, tx);
     const list = [...tasks.values()];
     const ids = list.map((t) => t.id);
@@ -233,6 +257,7 @@ export class TaskService {
       number,
       { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date }
     >();
+    const pending: PendingGraphEvent[] = [];
     for (const task of list) {
       const nextReady = readiness.get(task.id);
       const nextSched = schedule.get(task.id);
@@ -257,6 +282,7 @@ export class TaskService {
             payload: {},
           },
         });
+        pending.push({ type: "TASK_BLOCKED", taskId: task.id, payload: {} });
       }
       if (readyChanged && nextReady === "READY") {
         await tx.taskEvent.create({
@@ -268,23 +294,34 @@ export class TaskService {
             payload: {},
           },
         });
+        pending.push({ type: "TASK_READY", taskId: task.id, payload: {} });
       }
       if (startChanged || endChanged) {
+        const payload = {
+          computedStart: nextSched?.computedStart?.toISOString() ?? null,
+          computedEnd: nextSched?.computedEnd?.toISOString() ?? null,
+        };
         await tx.taskEvent.create({
           data: {
             projectId,
             taskId: task.id,
             actorId,
             type: "SCHEDULE_CHANGED",
-            payload: {
-              computedStart: nextSched?.computedStart,
-              computedEnd: nextSched?.computedEnd,
-            },
+            payload,
           },
         });
+        pending.push({ type: "SCHEDULE_CHANGED", taskId: task.id, payload });
       }
     }
     await this._persistGraphUpdates(tx, updates);
+    return pending;
+  }
+
+  /** Publish graph-derived events. Must only be called after the transaction commits. */
+  async _emitPending(projectId: number, pending: PendingGraphEvent[]): Promise<void> {
+    for (const event of pending) {
+      await this._emit(event.type, projectId, event.taskId, event.payload);
+    }
   }
 
   async _emit(
