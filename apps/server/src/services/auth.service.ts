@@ -23,7 +23,7 @@ function omitHash(user: UserRecord): SafeUser {
 }
 
 function signToken(payload: { userId: number; email: string }): string {
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: "7d" });
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
 }
 
 export class AuthService {

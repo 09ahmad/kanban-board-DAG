@@ -154,6 +154,7 @@ Required `.env` variables:
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://taskflow:taskflow@localhost:5432/taskflow` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379` |
 | `JWT_SECRET` | Signing secret for JWT auth (min 32 chars) | — |
+| `JWT_EXPIRES_IN` | How long a login stays valid (`12h`, `30d`, or seconds) | `30d` |
 | `PORT` | REST API server port | `4000` |
 | `WS_PORT` | WebSocket server port | `4001` |
 | `NODE_ENV` | Node environment | `development` |
