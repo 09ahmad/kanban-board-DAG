@@ -11,17 +11,13 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { cn } from "@/lib/utils";
 import type { Project } from "@repo/types";
 import { ProjectListSkeleton } from "@/components/ui/skeleton";
+import { parseProjectInvite } from "@/lib/parse-project-invite";
+
+// Re-export so any import that still points at this route file keeps compiling.
+export { parseProjectInvite };
 
 interface ProjectsPageData {
   projects?: Project[];
-}
-
-/** Accepts a raw project ID ("147") or a full invite URL (".../projects/147/invite"). */
-export function parseProjectInvite(raw: string): number | null {
-  const value = raw.trim();
-  if (/^\d+$/.test(value)) return Number(value);
-  const match = value.match(/\/projects\/(\d+)(?:\/invite)?\/?$/);
-  return match ? Number(match[1]) : null;
 }
 
 export default function ProjectsPage() {
