@@ -5,6 +5,7 @@ export const AiSuggestionItemSchema = z.object({
   prerequisiteTaskId: z.number().int().positive(),
   confidence: z.number().min(0).max(1),
   reason: z.string().optional(),
+  criticalPathImpactDays: z.number().nullable().optional(),
 });
 
 export type AiSuggestionItem = z.infer<typeof AiSuggestionItemSchema>;

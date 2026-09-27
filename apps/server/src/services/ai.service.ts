@@ -2,6 +2,7 @@ import { prisma } from "@repo/db/client";
 import { enqueueSuggestionJob, getSuggestionRunState, type SuggestionRunState } from "@repo/queue";
 import { NotFoundError, ConflictError } from "../lib/errors.js";
 import { createAiProvider, type AiProvider } from "../lib/ai-provider.js";
+import { computeCriticalPath } from "../engine/index.js";
 import { dependencyService } from "./dependency.service.js";
 import { projectService } from "./project.service.js";
 import { taskService } from "./task.service.js";
@@ -12,6 +13,25 @@ let aiProvider: AiProvider = createAiProvider();
 /** Lets a test drive the queue without an LLM behind it. */
 export function setAiProvider(provider: AiProvider): void {
   aiProvider = provider;
+}
+
+/**
+ * Day-impact of adding one edge, expressed as the difference between the
+ * critical path with it and without it. Reuses the engine's own math —
+ * no critical-path logic lives here.
+ */
+function edgeImpactDays(
+  taskList: Parameters<typeof computeCriticalPath>[0],
+  edges: Parameters<typeof computeCriticalPath>[1],
+  prerequisiteTaskId: number,
+  dependentTaskId: number,
+): number {
+  const baseline = computeCriticalPath(taskList, edges).totalDurationDays;
+  const withEdge = computeCriticalPath(taskList, [
+    ...edges,
+    { prerequisiteTaskId, dependentTaskId },
+  ]).totalDurationDays;
+  return withEdge - baseline;
 }
 
 export class AiService {
@@ -28,7 +48,7 @@ export class AiService {
     return { queued: true, jobId };
   }
 
-  async getSuggestions(projectId: number, taskId: number, requesterId: number): Promise<{ suggestions: AiSuggestion[]; status: SuggestionRunState }> {
+  async getSuggestions(projectId: number, taskId: number, requesterId: number): Promise<{ suggestions: Array<AiSuggestion & { criticalPathImpactDays: number }>; status: SuggestionRunState }> {
     await projectService.requireMember(projectId, requesterId);
     const task = await prisma.task.findFirst({ where: { id: taskId, projectId } });
     if (!task) throw new NotFoundError("Task");
@@ -37,7 +57,16 @@ export class AiService {
       prisma.aiSuggestion.findMany({ where: { taskId, status: "PENDING" } }),
       getSuggestionRunState(taskId),
     ]);
-    return { suggestions, status };
+
+    // Impact is computed at read time (never persisted) so the UI can show it
+    // on each suggestion before the user confirms an accept.
+    const { tasks, edges } = await taskService._loadGraph(projectId);
+    const list = [...tasks.values()];
+    const withImpact = suggestions.map((s) => ({
+      ...s,
+      criticalPathImpactDays: edgeImpactDays(list, edges, s.prerequisiteTaskId, s.taskId),
+    }));
+    return { suggestions: withImpact, status };
   }
 
   /** Runs inside the BullMQ worker, never in an HTTP request. */
@@ -97,7 +126,7 @@ export class AiService {
     return { suggestions };
   }
 
-  async acceptSuggestion(suggestionId: number, userId: number): Promise<{ suggestion: AiSuggestion; graph: { tasks: Task[]; dependencies: { prerequisiteTaskId: number; dependentTaskId: number }[] } }> {
+  async acceptSuggestion(suggestionId: number, userId: number): Promise<{ suggestion: AiSuggestion; graph: { tasks: Task[]; dependencies: { prerequisiteTaskId: number; dependentTaskId: number }[] }; criticalPathImpactDays: number }> {
     const suggestion = await prisma.aiSuggestion.findUnique({
       where: { id: suggestionId },
     });
@@ -125,7 +154,15 @@ export class AiService {
     await taskService._emit("AI_SUGGESTION_ACCEPTED", suggestion.projectId, suggestion.taskId, {
       suggestionId,
     });
-    return { suggestion: updated, graph };
+    // The edge is committed now; the impact is what the critical path gained
+    // from it, reusing the engine's math.
+    const { tasks, edges } = await taskService._loadGraph(suggestion.projectId);
+    const list = [...tasks.values()];
+    const withoutEdge = edges.filter(
+      (e) => !(e.prerequisiteTaskId === suggestion.prerequisiteTaskId && e.dependentTaskId === suggestion.taskId),
+    );
+    const criticalPathImpactDays = computeCriticalPath(list, edges).totalDurationDays - computeCriticalPath(list, withoutEdge).totalDurationDays;
+    return { suggestion: updated, graph, criticalPathImpactDays };
   }
 
   async rejectSuggestion(suggestionId: number, userId: number): Promise<AiSuggestion> {

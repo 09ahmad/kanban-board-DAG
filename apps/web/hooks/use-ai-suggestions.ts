@@ -72,12 +72,15 @@ export function useAiSuggestions({ projectId, taskId, pollIntervalMs = POLL_INTE
     }
   }, [projectId, taskId, poll, pollIntervalMs]);
 
-  const accept = useCallback(async (suggestion: AiSuggestionItem) => {
+  const accept = useCallback(async (suggestion: AiSuggestionItem): Promise<number | null | undefined> => {
     try {
-      await apiClient(`/ai/suggestions/${suggestion.id}/accept`, { method: "POST" });
+      const res = await apiClient<{ criticalPathImpactDays?: number | null }>(`/ai/suggestions/${suggestion.id}/accept`, { method: "POST" });
+      const impact = unwrapResponse(res).criticalPathImpactDays;
       setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+      return impact;
     } catch (err: any) {
       setError(err?.error?.message ?? "Accept failed");
+      return undefined;
     }
   }, []);
 

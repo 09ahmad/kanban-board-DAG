@@ -10,6 +10,7 @@ interface TaskCardProps {
   task: Task;
   onClick?: (taskId: number) => void;
   onDeleteTask?: (taskId: number) => void;
+  onManageDependencies?: (taskId: number) => void;
   columnId?: TaskStatus;
   isCritical?: boolean;
   readinessPending?: boolean;
@@ -43,6 +44,7 @@ export function TaskCard({
   task,
   onClick,
   onDeleteTask,
+  onManageDependencies,
   columnId,
   isCritical,
   readinessPending,
@@ -140,7 +142,7 @@ export function TaskCard({
         <span className="w-2 h-2 rounded-full bg-success absolute -right-1.5 -top-1.5" />
       )}
 
-      {onDeleteTask && (
+      {(onDeleteTask || onManageDependencies) && (
         <div ref={menuRef} className="relative flex-shrink-0">
           <button
             type="button"
@@ -165,21 +167,40 @@ export function TaskCard({
               role="menu"
               className="absolute right-0 top-6 z-30 min-w-[160px] bg-surface-card border border-hairline rounded-md shadow-lg py-1"
             >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMenuOpen(false);
-                  onDeleteTask(task.id);
-                }}
-                className="w-full px-3 py-2 text-left text-[13px] text-blocked hover:bg-error/10 flex items-center gap-2"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-                Delete task
-              </button>
+              {onManageDependencies && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    onManageDependencies(task.id);
+                  }}
+                  className="w-full px-3 py-2 text-left text-[13px] text-ink hover:bg-surface-soft flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                  Manage Dependencies
+                </button>
+              )}
+              {onDeleteTask && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    onDeleteTask(task.id);
+                  }}
+                  className="w-full px-3 py-2 text-left text-[13px] text-blocked hover:bg-error/10 flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                  Delete task
+                </button>
+              )}
             </div>
           )}
         </div>

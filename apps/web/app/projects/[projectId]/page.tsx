@@ -179,6 +179,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
               <Button>Go to Board</Button>
             </Link>
             <Button onClick={() => setShowCreateTask(true)}>Create Task</Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const inviteUrl = `${window.location.origin}/projects/${projectId}/invite`;
+                navigator.clipboard
+                  .writeText(inviteUrl)
+                  .then(() => toast({ type: "success", message: "Invite link copied" }))
+                  .catch(() => toast({ type: "error", message: "Could not copy the invite link" }));
+              }}
+            >
+              Copy Invite Link
+            </Button>
             {isOwner && (
               <>
                 <Button variant="secondary" onClick={() => setShowEditModal(true)}>Edit</Button>

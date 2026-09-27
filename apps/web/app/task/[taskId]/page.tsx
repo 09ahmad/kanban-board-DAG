@@ -387,12 +387,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                 const prereqTask = prereqTasks.get(dep.prerequisiteTaskId);
                 return (
                   <div key={dep.id} className="card p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                    <Link href={`/task/${dep.prerequisiteTaskId}`} className="flex items-center gap-4 min-w-0 flex-1 group/prereq">
                       <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-sm">
                         {prereqTask ? prereqTask.title.charAt(0).toUpperCase() : dep.prerequisiteTaskId}
                       </div>
                       <div className="space-y-1 min-w-0">
-                        <p className="font-medium text-ink truncate">
+                        <p className="font-medium text-ink truncate group-hover/prereq:text-primary transition-colors">
                           {prereqTask ? prereqTask.title : `Task #${dep.prerequisiteTaskId}`}
                         </p>
                         <div className="flex items-center gap-1.5">
@@ -408,7 +408,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                           )}
                         </div>
                       </div>
-                    </div>
+                    </Link>
                     <div className="flex items-center gap-2">
                       <Badge variant="pill">{prereqTask?.readiness ?? "Waiting"}</Badge>
                       <Button
@@ -450,12 +450,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                 const dependentTask = dependentTasks.get(dep.dependentTaskId);
                 return (
                   <div key={dep.id} className="card p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                    <Link href={`/task/${dep.dependentTaskId}`} className="flex items-center gap-4 min-w-0 flex-1 group/dependent">
                       <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-sm">
                         {dependentTask ? dependentTask.title.charAt(0).toUpperCase() : dep.dependentTaskId}
                       </div>
                       <div className="space-y-1 min-w-0">
-                        <p className="font-medium text-ink truncate">
+                        <p className="font-medium text-ink truncate group-hover/dependent:text-primary transition-colors">
                           {dependentTask ? dependentTask.title : `Task #${dep.dependentTaskId}`}
                         </p>
                         <div className="flex items-center gap-1.5">
@@ -471,7 +471,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                           )}
                         </div>
                       </div>
-                    </div>
+                    </Link>
                     <div className="flex items-center gap-2">
                       <Badge variant="pill">{dependentTask?.readiness ?? "Waiting"}</Badge>
                       <Button
@@ -498,6 +498,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
               })
             )}
           </div>
+        </div>
+
+        {/* AI dependency suggestions for this task */}
+        <div className="space-y-4">
+          <h2 className="font-display text-[24px] text-ink">AI Suggestions</h2>
+          <AiSuggestions projectId={task.projectId} taskId={taskId} />
         </div>
       </div>
 

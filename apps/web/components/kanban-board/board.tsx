@@ -28,6 +28,9 @@ interface KanbanBoardProps {
   onReorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
   onTaskClick: (taskId: number) => void;
   onDeleteTask: (taskId: number) => void;
+  onManageDependencies?: (taskId: number) => void;
+  loading?: boolean;
+  error?: string | null;
 }
 
 interface BoardColumn {
@@ -131,6 +134,9 @@ export function KanbanBoard({
   onReorderTask,
   onTaskClick,
   onDeleteTask,
+  onManageDependencies,
+  loading,
+  error,
 }: KanbanBoardProps) {
   const [activeId, setActiveId] = useState<number | null>(null);
   const { toast } = useToast();
@@ -182,8 +188,11 @@ export function KanbanBoard({
             tasks={col.tasks}
             onTaskClick={onTaskClick}
             onDeleteTask={onDeleteTask}
+            onManageDependencies={onManageDependencies}
             criticalTaskIds={criticalTaskIds}
             pendingReadinessIds={pendingReadinessIds}
+            loading={loading}
+            error={error}
           />
         ))}
       </div>

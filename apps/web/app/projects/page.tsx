@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,8 @@ export default function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectDesc, setNewProjectDesc] = useState("");
   const [creating, setCreating] = useState(false);
+  const [joinValue, setJoinValue] = useState("");
+  const router = useRouter();
 
   useEffect(() => {
     fetchProjects();
@@ -89,6 +92,35 @@ export default function ProjectsPage() {
           </div>
           <Button onClick={handleCreateProject}>New project</Button>
         </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const id = parseProjectInvite(joinValue);
+            if (id) {
+              setJoinValue("");
+              router.push(`/projects/${id}/invite`);
+            }
+          }}
+          className="card flex flex-col sm:flex-row gap-3 sm:items-end"
+        >
+          <div className="flex-1">
+            <label htmlFor="join-project" className="block text-sm font-medium text-ink mb-1">
+              Join a project
+            </label>
+            <input
+              id="join-project"
+              type="text"
+              placeholder="Paste an invite link or a project ID"
+              value={joinValue}
+              onChange={(e) => setJoinValue(e.target.value)}
+              className="input w-full"
+            />
+          </div>
+          <Button type="submit" disabled={!joinValue.trim() || !parseProjectInvite(joinValue)}>
+            Join
+          </Button>
+        </form>
 
         {showCreate && (
           <form onSubmit={handleCreate} className="card space-y-4">

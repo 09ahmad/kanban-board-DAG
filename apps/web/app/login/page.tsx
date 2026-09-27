@@ -24,7 +24,11 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email, password);
-      router.push("/projects");
+      // An invite flow lands here with ?redirect= pointing back at the invite
+      // page; only same-origin relative paths are honored.
+      const requested = new URLSearchParams(window.location.search).get("redirect");
+      const target = requested && requested.startsWith("/") && !requested.startsWith("//") ? requested : "/projects";
+      router.push(target);
     } catch (err: any) {
       setError(err?.error?.message ?? "Login failed");
     }

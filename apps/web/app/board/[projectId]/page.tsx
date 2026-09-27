@@ -54,17 +54,67 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   const [criticalPath, setCriticalPath] = useState<CriticalPathResult | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ task: Task; dependents: Task[] } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [manageTaskId, setManageTaskId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [readinessFilter, setReadinessFilter] = useState<"all" | "READY" | "BLOCKED">("all");
   const { toast } = useToast();
+
+  // Client-side filtering over already-fetched board state — the modals keep
+  // the full task list so the dependency picker is unaffected.
+  const matchesFilter = useCallback(
+    (task: Task) => {
+      const query = search.trim().toLowerCase();
+      if (query && !task.title.toLowerCase().includes(query)) return false;
+      if (readinessFilter !== "all" && task.readiness !== readinessFilter) return false;
+      return true;
+    },
+    [search, readinessFilter]
+  );
+
+  const filteredColumns = columns.map((col) => ({
+    ...col,
+    tasks: col.tasks.filter(matchesFilter),
+  }));
+  const filteredCount = filteredColumns.reduce((sum, col) => sum + col.tasks.length, 0);
+  const filtersActive = search.trim().length > 0 || readinessFilter !== "all";
 
   // Counts the graph events the socket has delivered, so a delete can tell
   // whether anything arrived during the wait.
   const graphEventCount = useRef(0);
   const deleteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Buffers cascading readiness events so one backward move — which marks
+  // every downstream task at once — becomes a single toast, not a storm.
+  const blockedBuffer = useRef(0);
+  const readyBuffer = useRef(0);
+  const readinessToast = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadCriticalPath = useCallback(async () => {
     const data = await fetchCriticalPath();
     if (data) setCriticalPath(data);
   }, [fetchCriticalPath]);
+
+  const queueReadinessToast = useCallback(() => {
+    if (readinessToast.current) clearTimeout(readinessToast.current);
+    readinessToast.current = setTimeout(() => {
+      const blocked = blockedBuffer.current;
+      const ready = readyBuffer.current;
+      blockedBuffer.current = 0;
+      readyBuffer.current = 0;
+      readinessToast.current = null;
+      if (blocked > 0) {
+        toast({
+          type: "error",
+          message: `${blocked} task${blocked === 1 ? " was" : "s were"} marked Blocked.`,
+        });
+      }
+      if (ready > 0) {
+        toast({
+          type: "success",
+          message: `${ready} task${ready === 1 ? " is" : "s are"} now Ready.`,
+        });
+      }
+    }, READINESS_TOAST_MS);
+  }, [toast]);
 
   useEffect(() => {
     loadCriticalPath();
@@ -73,6 +123,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   useEffect(() => {
     return () => {
       if (deleteFallback.current) clearTimeout(deleteFallback.current);
+      if (readinessToast.current) clearTimeout(readinessToast.current);
     };
   }, []);
 
@@ -93,6 +144,14 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
       }
 
       switch (event.type) {
+        case "TASK_READY":
+          readyBuffer.current += 1;
+          queueReadinessToast();
+          break;
+        case "TASK_BLOCKED":
+          blockedBuffer.current += 1;
+          queueReadinessToast();
+          break;
         case "AI_SUGGESTION_CREATED":
           toast({ type: "info", message: "AI suggested new dependencies" });
           break;
@@ -104,7 +163,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
           break;
       }
     },
-    [refetch, loadCriticalPath, toast]
+    [refetch, loadCriticalPath, queueReadinessToast, toast]
   );
 
   const handleReconnect = useCallback(() => {
@@ -170,7 +229,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     }
   }, [pendingDelete, removeTask, toast]);
 
-  if (loading) {
+  // The board-wide states cover the initial load, when there is nothing to
+  // show per column. A refresh that runs with data on screen renders the
+  // board and lets each column carry its own loading/error state.
+  if (loading && allTasks.length === 0) {
     return (
       <AppLayout>
         <BoardSkeleton />
@@ -178,7 +240,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     );
   }
 
-  if (error) {
+  if (error && allTasks.length === 0) {
     return (
       <AppLayout>
         <div className="bg-error/10 border border-error/20 rounded-lg p-6 text-error">{error}</div>
@@ -195,6 +257,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
             <p className="text-body text-[16px]">Drag tasks between columns. Blocked tasks cannot enter In Progress.</p>
           </div>
           <div className="flex items-center gap-3">
+            <MembersAvatarRow projectId={projectId} />
             <Button
               onClick={() => setShowDependencyList(true)}
               variant="secondary"
@@ -224,8 +287,56 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
         </div>
 
         {activeTab === "board" && (
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <input
+              type="text"
+              placeholder="Filter by title…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Filter tasks by title"
+              className="input w-full sm:max-w-xs"
+            />
+            <select
+              value={readinessFilter}
+              onChange={(e) => setReadinessFilter(e.target.value as "all" | "READY" | "BLOCKED")}
+              aria-label="Filter tasks by readiness"
+              className="input w-full sm:w-auto"
+            >
+              <option value="all">All readiness</option>
+              <option value="READY">Ready</option>
+              <option value="BLOCKED">Blocked</option>
+            </select>
+            <select
+              disabled
+              aria-label="Filter tasks by assignee"
+              title="Assignees arrive with the members rollout"
+              className="input w-full sm:w-auto opacity-50 cursor-not-allowed"
+            >
+              <option>All assignees</option>
+            </select>
+            {filtersActive && (
+              <div className="flex items-center gap-3 sm:ml-auto">
+                <span className="text-[13px] text-muted whitespace-nowrap">
+                  {filteredCount} of {allTasks.length} task{allTasks.length === 1 ? "" : "s"}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setReadinessFilter("all");
+                  }}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "board" && (
           <KanbanBoard
-            columns={columns}
+            columns={filteredColumns}
             dependencies={dependencies}
             criticalTaskIds={criticalPath?.criticalTaskIds ?? []}
             pendingReadinessIds={pendingReadinessIds}
@@ -233,6 +344,8 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
             onReorderTask={reorderTask}
             onTaskClick={setSelectedTaskId}
             onDeleteTask={requestDeleteTask}
+            loading={loading}
+            error={error}
           />
         )}
 
@@ -271,7 +384,11 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
         <AddDependencyModal
           tasks={allTasks}
           dependencies={dependencies}
-          onClose={() => setShowDependencyModal(false)}
+          defaultDependentTaskId={manageTaskId ?? undefined}
+          onClose={() => {
+            setShowDependencyModal(false);
+            setManageTaskId(null);
+          }}
           onAdd={createDependency}
         />
       )}

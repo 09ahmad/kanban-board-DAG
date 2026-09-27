@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -14,6 +17,16 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
     projectId,
     taskId,
   });
+  const [acceptedNote, setAcceptedNote] = useState<string | null>(null);
+
+  const handleAccept = async (suggestion: AiSuggestionItem) => {
+    const impact = await accept(suggestion);
+    setAcceptedNote(
+      typeof impact === "number" && impact > 0
+        ? `Accepted — this dependency extends the critical path by ${impact} day${impact === 1 ? "" : "s"}.`
+        : "Accepted — no change to the critical path.",
+    );
+  };
 
   return (
     <Card className="space-y-4">
@@ -35,6 +48,12 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
         </div>
       )}
 
+      {acceptedNote && (
+        <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-success text-[14px]">
+          {acceptedNote}
+        </div>
+      )}
+
       {suggestions.length === 0 && !busy && (
         <p className="text-body text-[14px] text-muted">
           No suggestions right now. Click Generate to see AI-proposed dependencies.
@@ -52,13 +71,18 @@ export function AiSuggestions({ projectId, taskId }: AiSuggestionsProps) {
                 <Badge variant="pill">
                   {Math.round(suggestion.confidence * 100)}% confidence
                 </Badge>
+                {typeof suggestion.criticalPathImpactDays === "number" && suggestion.criticalPathImpactDays > 0 && (
+                  <Badge variant="pill" className="bg-primary/10 text-primary">
+                    +{suggestion.criticalPathImpactDays} day{suggestion.criticalPathImpactDays === 1 ? "" : "s"} on critical path
+                  </Badge>
+                )}
               </div>
               {suggestion.reason && (
                 <span className="text-[13px] text-muted">{suggestion.reason}</span>
               )}
             </div>
             <div className="flex gap-2">
-              <Button variant="primary" size="sm" onClick={() => accept(suggestion)}>
+              <Button variant="primary" size="sm" onClick={() => handleAccept(suggestion)}>
                 Accept
               </Button>
               <Button variant="secondary" size="sm" onClick={() => reject(suggestion)}>
