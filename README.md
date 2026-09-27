@@ -43,17 +43,23 @@ Engineering teams plan work as dependency chains — "Task B cannot start until 
 │   Next.js   │────▶│   Express    │────▶│  PostgreSQL  │
 │   (port 3000)    │  (port 4000)  │     │  (Prisma 7)  │
 └─────────────┘     └──────┬───────┘     └──────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │    Redis     │
-                    │  (Pub/Sub)   │
-                    └──────┬───────┘
-                           │
-                    ┌──────▼───────┐
-                    │  WebSocket   │
-                    │  (port 4001) │
-                    └──────────────┘
+   │   /api, /ws            │  ▲ BullMQ worker (same process)
+   │   proxied by Next       │
+   │                  ┌──────▼───────┐
+   │                  │    Redis     │
+   │                  │ Pub/Sub+Queue│
+   │                  └──────┬───────┘
+   │                         │
+   │                  ┌──────▼───────┐
+   └─────────────────▶│  WebSocket   │
+                      │  (port 4001) │
+                      └──────────────┘
 ```
+
+In Docker the browser is given `/api` and `/ws` rather than absolute URLs, so
+Next forwards them and the page never talks to a second origin. Locally the
+browser addresses `localhost:4000` and `localhost:4001` directly and no proxy
+is involved.
 
 
 ### Core Engine (`apps/server/src/engine/`)
@@ -61,16 +67,18 @@ Pure TypeScript DAG engine with zero I/O:
 | File | Algorithm | Description |
 |------|-----------|-------------|
 | `topological-sort.ts` | Kahn's algorithm | Deterministic execution order |
-| `cycle-detector.ts` | DFS-based | Validates no circular dependencies |
-| `graph.ts` | Adjacency list | Builds and queries dependency graph |
-| `readiness.ts` | Transitive closure | Computes READY/BLOCKED per task |
-| `scheduler.ts` | CPM | Calculates earliest start/end, float, critical path |
-| `critical-path.ts` | Longest path | Identifies critical chain of tasks |
+| `cycle-detector.ts` | DFS reachability | Rejects self, direct, and indirect cycles before any write |
+| `graph.ts` | Adjacency list | Builds and queries prerequisite/dependent maps |
+| `readiness.ts` | Topological pass + downstream closure | Computes READY/BLOCKED per task; `computeDownstreamReadiness` narrows it to what a change can reach |
+| `scheduler.ts` | Finish-to-start | Computes `computedStart`/`computedEnd` from the topological order |
+| `critical-path.ts` | Longest-path relaxation | Returns `criticalTaskIds`, `criticalEdges`, `totalDurationDays` |
 
 ### Key Design Decisions
 - **No-compounding**: Downstream shifts by exact delta, never compounded
-- **Immutable readiness**: Computed from full graph on every change, persisted atomically
+- **Engine-owned readiness**: Derived from the graph, never accepted from a client, persisted in the same transaction as the change that caused it
+- **Downstream-scoped writes**: A mutation recomputes the changed tasks and everything downstream of them, not the whole project. The graph is still read in full, but tasks no change could reach are not rewritten, version-bumped, or broadcast
 - **Event-driven**: All state changes emit domain events via Redis Pub/Sub for real-time WebSocket push
+- **AI off the request path**: Suggestions are queued as a BullMQ job and polled for, so a slow model cannot hold an HTTP request open
 
 ## Quick Start
 
@@ -153,6 +161,23 @@ Required `.env` variables:
 | `LLM_API_KEY` | **Optional** - OpenAI API key for AI suggestions | — |
 | `LLM_BASE_URL` | LLM endpoint (OpenAI) | `https://api.openai.com/v1` |
 | `LLM_MODEL` | Model to use | `gpt-4o-mini` |
+| `LLM_TIMEOUT_MS` | LLM request timeout | `15000` |
+| `AI_SUGGESTIONS_QUEUE` | BullMQ queue name for AI jobs | `ai-suggestions` |
+
+Frontend variables (build-time, inlined into the bundle):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_API_URL` | REST base URL the browser uses | `http://localhost:4000/api/v1` |
+| `NEXT_PUBLIC_WS_URL` | WebSocket URL the browser uses | `ws://localhost:4001` |
+
+> **Same-origin deployments:** set `NEXT_PUBLIC_API_URL=/api` and
+> `NEXT_PUBLIC_WS_URL=/ws` and the browser stays on the origin that served the
+> page. Next then forwards `/api` to `API_INTERNAL_URL` and `/ws` to
+> `WS_INTERNAL_URL` — the compose file does this. Relative values are resolved
+> against the page, upgrading to `wss` on a secure origin. **Those two internal
+> URLs are build args, not container env**: `next build` freezes rewrite
+> destinations into the build output, so changing them requires a rebuild.
 
 > **AI Service**: AI-powered dependency suggestions are **optional**. If `LLM_API_KEY` is not set, the system works normally but AI suggestions are disabled with a warning.
 
@@ -205,9 +230,14 @@ All responses follow uniform envelope:
 ### AI Suggestions (requires `LLM_API_KEY`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/projects/:id/ai/dependency-suggestions` | Generate AI suggestions |
-| `POST` | `/ai/suggestions/:id/accept` | Accept a suggestion |
+| `POST` | `/projects/:id/ai/dependency-suggestions` | Queue a run; returns `202 { queued, jobId }` |
+| `GET` | `/projects/:id/ai/dependency-suggestions?taskId=` | Poll for `{ suggestions, status }` |
+| `POST` | `/ai/suggestions/:id/accept` | Accept a suggestion (creates the dependency) |
 | `POST` | `/ai/suggestions/:id/reject` | Reject a suggestion |
+
+Generation is asynchronous. The worker is hosted by `apps/server` itself, so
+the API container also runs the BullMQ consumer. A job ID is derived from the
+task, so repeated requests for one task cannot stack up duplicate runs.
 
 ### Health
 | Method | Endpoint | Description |
@@ -236,7 +266,8 @@ All responses follow uniform envelope:
 
 ## WebSocket Real-time Updates
 
-Connect to `ws://localhost:4001` and subscribe to project events:
+Connect to `ws://localhost:4001` and subscribe to project events. `projectId` is
+numeric; a string is ignored without an error.
 
 ```javascript
 const ws = new WebSocket("ws://localhost:4001");
@@ -244,7 +275,7 @@ const ws = new WebSocket("ws://localhost:4001");
 ws.onopen = () => {
   ws.send(JSON.stringify({
     type: "PROJECT_SUBSCRIBE",
-    projectId: "your-project-id"
+    projectId: 1
   }));
 };
 
@@ -254,6 +285,13 @@ ws.onmessage = (event) => {
   // Handle: TASK_MOVED, TASK_READY, TASK_BLOCKED, DEPENDENCY_ADDED, etc.
 };
 ```
+
+> Events published while a socket was down never reach that client. Reconnect
+> with exponential backoff, and refetch authoritative state on reconnect rather
+> than trusting the stream to have caught you up.
+
+> The WebSocket server also answers `GET /health` over HTTP on the same port,
+> which is what the compose healthcheck uses.
 
 ### Event Types Broadcasted
 - `TASK_CREATED`, `TASK_UPDATED`, `TASK_MOVED`, `TASK_DELETED`
@@ -273,10 +311,14 @@ bun test --coverage
 
 # Individual test suites
 bun run test:server        # All server tests
-bun run test:server:engine # DAG engine unit tests only
+bun test apps/server/src/engine  # DAG engine unit tests only
 bun run test:ws            # WebSocket server tests
 bun run test:web           # Web app tests
 ```
+
+> Integration tests run against a live PostgreSQL and Redis and **truncate
+> shared tables between files**. Point `DATABASE_URL` at a scratch database
+> before running them, never at anything you care about.
 
 ## Type Checking & Linting
 
@@ -301,12 +343,12 @@ bun run format
 ## Known Limitations
 
 - **Auth simplification**: `localStorage` JWT storage (documented simplification, not production-grade). No refresh-token rotation.
-- **WebSocket reliability**: One connection per board page; no automatic reconnect with exponential backoff.
-- **AI integration**: Graceful degradation — if LLM API is unavailable, suggestions are skipped; no fallback model cascade.
+- **AI integration**: Graceful degradation — if the LLM API is unavailable, suggestions fail the job and no suggestions are recorded; there is no fallback model cascade.
 - **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop not fully validated on all mobile browsers.
-- **Performance**: Critical-path recalculation is O(V+E) per mutation; for very large graphs (>1000 tasks) this may need caching or incremental updates.
+- **Recomputation reads the whole graph**: Writes are limited to the changed tasks and their descendants, but every mutation still loads the project graph, so a mutation is O(V+E) to load even when it touches one task. Projects beyond a few thousand tasks would want caching or an incremental view.
+- **No project-wide reconciliation**: Because recomputation is descendant-scoped, drift that is not downstream of a change will not be corrected by later mutations. A repair path would have to recompute deliberately.
 - **No multi-region Redis clustering** configured; single Redis instance used for Pub/Sub.
-- **No circuit breaker / retry logic** on BullMQ background jobs (AI queue).
+- **Single worker process**: AI jobs are consumed by whichever API replica starts first. Running more than one replica is safe, but queue concurrency is per-replica and needs a look before scaling out.
 
 ## Documentation
 

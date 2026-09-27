@@ -65,7 +65,7 @@ kanban-board/
 ## 4. Known Limitations / Design Trade-offs
 
 - **Auth simplification**: `localStorage` JWT storage (documented simplification, not production-grade). No refresh-token rotation.
-- **WebSocket reliability**: One connection per board page; no automatic reconnect with exponential backoff implemented in this build.
+- **WebSocket reliability**: One connection per board page, with exponential-backoff reconnect capped at 30s. Anything published while a socket was down is lost for that client, so a reconnect triggers an authoritative refetch rather than trusting the stream to have caught up.
 - **AI integration**: Graceful degradation — if LLM API is unavailable, suggestions are skipped; no fallback model cascade. Generation runs in a BullMQ worker, so the client polls `GET /projects/:id/ai/dependency-suggestions?taskId=` until the run reports `completed` or `failed`.
 - **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop (dnd-kit) not fully validated on all mobile browsers.
 - **Performance**: Critical-path recalculation is O(V+E) per mutation; for very large graphs (>1000 tasks) this may need caching or incremental updates.
