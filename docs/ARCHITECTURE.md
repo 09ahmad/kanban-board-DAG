@@ -1,6 +1,12 @@
 # TaskFlow Pro — Architecture, Data Model & Known Limitations
 
+
+
 ## 1. System Architecture
+
+### Detailed Architecture
+<https://excalidraw.com/#json=QZdBPcfZbQynerSnXIVEW,rD-20XtRVLXwD90rhSrxAA>
+
 
 ### Monorepo (Turborepo)
 ```

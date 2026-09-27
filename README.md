@@ -36,15 +36,6 @@ Engineering teams plan work as dependency chains — "Task B cannot start until 
 - One connected chain marked as "critical path" (heavier line weight), distinguishable at a glance
 - Back link to the board
 
-## Screenshots
-
-| Screen | Screenshot |
-|--------|------------|
-| Kanban Board | ![Kanban Board](/home/sk-ahmad/Pictures/Screenshots/Screenshot%20from%202026-09-26%2019-41-57.png) |
-| Task Detail / Dependency Graph | ![Task Detail](/home/sk-ahmad/Pictures/Screenshots/Screenshot%20from%202026-09-26%2019-42-13.png) |
-
-> **Note**: For the screenshots to render in the GitHub/GitLab repository view, copy the images into the repo (e.g., `docs/screenshots/`) and update the paths above to relative references like `docs/screenshots/board.png`.
-
 ## Architecture
 
 ```
@@ -64,19 +55,6 @@ Engineering teams plan work as dependency chains — "Task B cannot start until 
                     └──────────────┘
 ```
 
-**Monorepo (Turborepo):**
-```
-kanban-board/
-├── apps/
-│   ├── web/              # Next.js 16 + React 19 App Router
-│   ├── server/           # Express + TS REST API + DAG Engine (port 4000)
-│   └── ws-server/        # ws package WebSocket server (port 4001)
-├── packages/
-│   ├── db/               # Prisma 7 + PostgreSQL (pg adapter)
-│   ├── queue/            # BullMQ + ioredis Redis Pub/Sub
-│   └── types/            # Shared DTOs + Zod schemas
-└── turbo.json
-```
 
 ### Core Engine (`apps/server/src/engine/`)
 Pure TypeScript DAG engine with zero I/O:
@@ -334,7 +312,6 @@ bun run format
 
 - **Architecture & Data Model** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Test Suite** — [`docs/TESTING.md`](docs/TESTING.md)
-- **Evaluation Criteria** — [`EVAL_CRITERIA.md`](EVAL_CRITERIA.md)
 
 ## License
 
