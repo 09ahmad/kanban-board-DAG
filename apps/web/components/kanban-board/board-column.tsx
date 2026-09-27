@@ -14,6 +14,8 @@ interface KanbanColumnProps {
   onTaskClick: (taskId: number) => void;
   onDeleteTask?: (taskId: number) => void;
   onManageDependencies?: (taskId: number) => void;
+  onAssign?: (taskId: number, assigneeId: number | null) => void;
+  members?: Array<{ id: number; userId: number; name: string; role: string }>;
   criticalTaskIds: number[];
   pendingReadinessIds: Set<number>;
   loading?: boolean;
@@ -28,6 +30,8 @@ export function KanbanColumn({
   onTaskClick,
   onDeleteTask,
   onManageDependencies,
+  onAssign,
+  members,
   criticalTaskIds,
   pendingReadinessIds,
   loading,
@@ -80,6 +84,9 @@ export function KanbanColumn({
                   task={task}
                   onClick={() => onTaskClick(task.id)}
                   onDeleteTask={onDeleteTask}
+                  onManageDependencies={onManageDependencies}
+                  onAssign={onAssign}
+                  members={members}
                   isCritical={criticalSet.has(task.id)}
                   columnId={id}
                   readinessPending={pendingReadinessIds.has(task.id)}

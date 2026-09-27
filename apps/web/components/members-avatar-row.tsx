@@ -18,17 +18,27 @@ const MAX_VISIBLE = 4;
 /**
  * Overlapping initial avatars for the board header, populated from
  * GET /projects/:id/members. A purely presentational row — membership
- * management lives on the project page.
+ * management lives on the project page. Pass `members` when the parent
+ * already holds the list, so the endpoint is read once per page.
  */
-export function MembersAvatarRow({ projectId }: { projectId: number }) {
-  const [members, setMembers] = useState<ProjectMemberInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+export function MembersAvatarRow({
+  projectId,
+  members: membersProp,
+}: {
+  projectId: number;
+  members?: ProjectMemberInfo[];
+}) {
+  const [fetched, setFetched] = useState<ProjectMemberInfo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const members = membersProp ?? fetched;
 
   useEffect(() => {
+    if (membersProp) return;
     let cancelled = false;
+    setLoading(true);
     apiClient<ProjectMemberInfo[]>(`/projects/${projectId}/members`)
       .then((res) => {
-        if (!cancelled) setMembers(unwrapResponse(res) || []);
+        if (!cancelled) setFetched(unwrapResponse(res) || []);
       })
       .catch(() => {
         // The row is decorative; the board still works without it.
@@ -39,7 +49,7 @@ export function MembersAvatarRow({ projectId }: { projectId: number }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, membersProp]);
 
   if (loading || members.length === 0) return null;
 

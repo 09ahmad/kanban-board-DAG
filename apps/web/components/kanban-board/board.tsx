@@ -29,6 +29,8 @@ interface KanbanBoardProps {
   onTaskClick: (taskId: number) => void;
   onDeleteTask: (taskId: number) => void;
   onManageDependencies?: (taskId: number) => void;
+  onAssign?: (taskId: number, assigneeId: number | null) => void;
+  members?: Array<{ id: number; userId: number; name: string; role: string }>;
   loading?: boolean;
   error?: string | null;
 }
@@ -135,6 +137,8 @@ export function KanbanBoard({
   onTaskClick,
   onDeleteTask,
   onManageDependencies,
+  onAssign,
+  members,
   loading,
   error,
 }: KanbanBoardProps) {
@@ -189,6 +193,8 @@ export function KanbanBoard({
             onTaskClick={onTaskClick}
             onDeleteTask={onDeleteTask}
             onManageDependencies={onManageDependencies}
+            onAssign={onAssign}
+            members={members}
             criticalTaskIds={criticalTaskIds}
             pendingReadinessIds={pendingReadinessIds}
             loading={loading}

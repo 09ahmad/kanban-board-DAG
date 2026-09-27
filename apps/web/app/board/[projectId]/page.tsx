@@ -34,6 +34,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     error,
     moveTask,
     reorderTask,
+    assignTask,
     createTask,
     markDependenciesPosted,
     pendingReadinessIds,
@@ -57,7 +58,26 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   const [manageTaskId, setManageTaskId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [readinessFilter, setReadinessFilter] = useState<"all" | "READY" | "BLOCKED">("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<"all" | number>("all");
+  const [members, setMembers] = useState<Array<{ id: number; userId: number; name: string; email: string; role: string; joinedAt: string | Date }>>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient<Array<{ id: number; userId: number; name: string; email: string; role: string; joinedAt: string | Date }>>(
+      `/projects/${projectId}/members`
+    )
+      .then((res) => {
+        if (!cancelled) setMembers(unwrapResponse(res) || []);
+      })
+      .catch(() => {
+        // The avatars and the assignee picker are decorative; the board
+        // still works without them.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   // Client-side filtering over already-fetched board state — the modals keep
   // the full task list so the dependency picker is unaffected.
@@ -66,9 +86,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
       const query = search.trim().toLowerCase();
       if (query && !task.title.toLowerCase().includes(query)) return false;
       if (readinessFilter !== "all" && task.readiness !== readinessFilter) return false;
+      if (assigneeFilter !== "all" && (task.assigneeId ?? null) !== assigneeFilter) return false;
       return true;
     },
-    [search, readinessFilter]
+    [search, readinessFilter, assigneeFilter]
   );
 
   const filteredColumns = columns.map((col) => ({
@@ -192,6 +213,11 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     [deleteTask, refetch, loadCriticalPath, toast]
   );
 
+  const requestManageDependencies = useCallback((taskId: number) => {
+    setManageTaskId(taskId);
+    setShowDependencyModal(true);
+  }, []);
+
   const requestDeleteTask = useCallback(
     async (taskId: number) => {
       const task = tasks.get(taskId);
@@ -257,7 +283,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
             <p className="text-body text-[16px]">Drag tasks between columns. Blocked tasks cannot enter In Progress.</p>
           </div>
           <div className="flex items-center gap-3">
-            <MembersAvatarRow projectId={projectId} />
+            <MembersAvatarRow projectId={projectId} members={members} />
             <Button
               onClick={() => setShowDependencyList(true)}
               variant="secondary"
@@ -307,12 +333,17 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
               <option value="BLOCKED">Blocked</option>
             </select>
             <select
-              disabled
+              value={assigneeFilter === "all" ? "all" : String(assigneeFilter)}
+              onChange={(e) => setAssigneeFilter(e.target.value === "all" ? "all" : Number(e.target.value))}
               aria-label="Filter tasks by assignee"
-              title="Assignees arrive with the members rollout"
-              className="input w-full sm:w-auto opacity-50 cursor-not-allowed"
+              className="input w-full sm:w-auto"
             >
-              <option>All assignees</option>
+              <option value="all">All assignees</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.userId}>
+                  {member.name}
+                </option>
+              ))}
             </select>
             {filtersActive && (
               <div className="flex items-center gap-3 sm:ml-auto">
@@ -325,6 +356,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
                   onClick={() => {
                     setSearch("");
                     setReadinessFilter("all");
+                    setAssigneeFilter("all");
                   }}
                 >
                   Clear
@@ -344,6 +376,9 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
             onReorderTask={reorderTask}
             onTaskClick={setSelectedTaskId}
             onDeleteTask={requestDeleteTask}
+            onManageDependencies={requestManageDependencies}
+            onAssign={assignTask}
+            members={members}
             loading={loading}
             error={error}
           />

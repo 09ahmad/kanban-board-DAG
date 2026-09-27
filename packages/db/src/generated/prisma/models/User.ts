@@ -236,6 +236,7 @@ export type UserWhereInput = {
   memberships?: Prisma.ProjectMemberListRelationFilter
   taskEvents?: Prisma.TaskEventListRelationFilter
   suggestionDecisions?: Prisma.AiSuggestionListRelationFilter
+  assignedTasks?: Prisma.TaskListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -250,6 +251,7 @@ export type UserOrderByWithRelationInput = {
   memberships?: Prisma.ProjectMemberOrderByRelationAggregateInput
   taskEvents?: Prisma.TaskEventOrderByRelationAggregateInput
   suggestionDecisions?: Prisma.AiSuggestionOrderByRelationAggregateInput
+  assignedTasks?: Prisma.TaskOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -267,6 +269,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   memberships?: Prisma.ProjectMemberListRelationFilter
   taskEvents?: Prisma.TaskEventListRelationFilter
   suggestionDecisions?: Prisma.AiSuggestionListRelationFilter
+  assignedTasks?: Prisma.TaskListRelationFilter
 }, "id" | "email">
 
 export type UserOrderByWithAggregationInput = {
@@ -308,6 +311,7 @@ export type UserCreateInput = {
   memberships?: Prisma.ProjectMemberCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -322,6 +326,7 @@ export type UserUncheckedCreateInput = {
   memberships?: Prisma.ProjectMemberUncheckedCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventUncheckedCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskUncheckedCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUpdateInput = {
@@ -335,6 +340,7 @@ export type UserUpdateInput = {
   memberships?: Prisma.ProjectMemberUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -349,6 +355,7 @@ export type UserUncheckedUpdateInput = {
   memberships?: Prisma.ProjectMemberUncheckedUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUncheckedUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUncheckedUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -476,6 +483,22 @@ export type UserUpdateOneRequiredWithoutMembershipsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutMembershipsInput, Prisma.UserUpdateWithoutMembershipsInput>, Prisma.UserUncheckedUpdateWithoutMembershipsInput>
 }
 
+export type UserCreateNestedOneWithoutAssignedTasksInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssignedTasksInput, Prisma.UserUncheckedCreateWithoutAssignedTasksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssignedTasksInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneWithoutAssignedTasksNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutAssignedTasksInput, Prisma.UserUncheckedCreateWithoutAssignedTasksInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutAssignedTasksInput
+  upsert?: Prisma.UserUpsertWithoutAssignedTasksInput
+  disconnect?: Prisma.UserWhereInput | boolean
+  delete?: Prisma.UserWhereInput | boolean
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutAssignedTasksInput, Prisma.UserUpdateWithoutAssignedTasksInput>, Prisma.UserUncheckedUpdateWithoutAssignedTasksInput>
+}
+
 export type UserCreateNestedOneWithoutSuggestionDecisionsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutSuggestionDecisionsInput, Prisma.UserUncheckedCreateWithoutSuggestionDecisionsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutSuggestionDecisionsInput
@@ -518,6 +541,7 @@ export type UserCreateWithoutOwnedProjectsInput = {
   memberships?: Prisma.ProjectMemberCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUncheckedCreateWithoutOwnedProjectsInput = {
@@ -531,6 +555,7 @@ export type UserUncheckedCreateWithoutOwnedProjectsInput = {
   memberships?: Prisma.ProjectMemberUncheckedCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventUncheckedCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskUncheckedCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserCreateOrConnectWithoutOwnedProjectsInput = {
@@ -559,6 +584,7 @@ export type UserUpdateWithoutOwnedProjectsInput = {
   memberships?: Prisma.ProjectMemberUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOwnedProjectsInput = {
@@ -572,6 +598,7 @@ export type UserUncheckedUpdateWithoutOwnedProjectsInput = {
   memberships?: Prisma.ProjectMemberUncheckedUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUncheckedUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUncheckedUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserCreateWithoutMembershipsInput = {
@@ -584,6 +611,7 @@ export type UserCreateWithoutMembershipsInput = {
   ownedProjects?: Prisma.ProjectCreateNestedManyWithoutOwnerInput
   taskEvents?: Prisma.TaskEventCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUncheckedCreateWithoutMembershipsInput = {
@@ -597,6 +625,7 @@ export type UserUncheckedCreateWithoutMembershipsInput = {
   ownedProjects?: Prisma.ProjectUncheckedCreateNestedManyWithoutOwnerInput
   taskEvents?: Prisma.TaskEventUncheckedCreateNestedManyWithoutActorInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskUncheckedCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserCreateOrConnectWithoutMembershipsInput = {
@@ -625,6 +654,7 @@ export type UserUpdateWithoutMembershipsInput = {
   ownedProjects?: Prisma.ProjectUpdateManyWithoutOwnerNestedInput
   taskEvents?: Prisma.TaskEventUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserUncheckedUpdateWithoutMembershipsInput = {
@@ -636,6 +666,77 @@ export type UserUncheckedUpdateWithoutMembershipsInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   ownedProjects?: Prisma.ProjectUncheckedUpdateManyWithoutOwnerNestedInput
+  taskEvents?: Prisma.TaskEventUncheckedUpdateManyWithoutActorNestedInput
+  suggestionDecisions?: Prisma.AiSuggestionUncheckedUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUncheckedUpdateManyWithoutAssigneeNestedInput
+}
+
+export type UserCreateWithoutAssignedTasksInput = {
+  name: string
+  email: string
+  passwordHash: string
+  avatarUrl?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  ownedProjects?: Prisma.ProjectCreateNestedManyWithoutOwnerInput
+  memberships?: Prisma.ProjectMemberCreateNestedManyWithoutUserInput
+  taskEvents?: Prisma.TaskEventCreateNestedManyWithoutActorInput
+  suggestionDecisions?: Prisma.AiSuggestionCreateNestedManyWithoutDecidedByInput
+}
+
+export type UserUncheckedCreateWithoutAssignedTasksInput = {
+  id?: number
+  name: string
+  email: string
+  passwordHash: string
+  avatarUrl?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  ownedProjects?: Prisma.ProjectUncheckedCreateNestedManyWithoutOwnerInput
+  memberships?: Prisma.ProjectMemberUncheckedCreateNestedManyWithoutUserInput
+  taskEvents?: Prisma.TaskEventUncheckedCreateNestedManyWithoutActorInput
+  suggestionDecisions?: Prisma.AiSuggestionUncheckedCreateNestedManyWithoutDecidedByInput
+}
+
+export type UserCreateOrConnectWithoutAssignedTasksInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssignedTasksInput, Prisma.UserUncheckedCreateWithoutAssignedTasksInput>
+}
+
+export type UserUpsertWithoutAssignedTasksInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutAssignedTasksInput, Prisma.UserUncheckedUpdateWithoutAssignedTasksInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutAssignedTasksInput, Prisma.UserUncheckedCreateWithoutAssignedTasksInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutAssignedTasksInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutAssignedTasksInput, Prisma.UserUncheckedUpdateWithoutAssignedTasksInput>
+}
+
+export type UserUpdateWithoutAssignedTasksInput = {
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  passwordHash?: Prisma.StringFieldUpdateOperationsInput | string
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  ownedProjects?: Prisma.ProjectUpdateManyWithoutOwnerNestedInput
+  memberships?: Prisma.ProjectMemberUpdateManyWithoutUserNestedInput
+  taskEvents?: Prisma.TaskEventUpdateManyWithoutActorNestedInput
+  suggestionDecisions?: Prisma.AiSuggestionUpdateManyWithoutDecidedByNestedInput
+}
+
+export type UserUncheckedUpdateWithoutAssignedTasksInput = {
+  id?: Prisma.IntFieldUpdateOperationsInput | number
+  name?: Prisma.StringFieldUpdateOperationsInput | string
+  email?: Prisma.StringFieldUpdateOperationsInput | string
+  passwordHash?: Prisma.StringFieldUpdateOperationsInput | string
+  avatarUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  ownedProjects?: Prisma.ProjectUncheckedUpdateManyWithoutOwnerNestedInput
+  memberships?: Prisma.ProjectMemberUncheckedUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUncheckedUpdateManyWithoutActorNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedUpdateManyWithoutDecidedByNestedInput
 }
@@ -650,6 +751,7 @@ export type UserCreateWithoutSuggestionDecisionsInput = {
   ownedProjects?: Prisma.ProjectCreateNestedManyWithoutOwnerInput
   memberships?: Prisma.ProjectMemberCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventCreateNestedManyWithoutActorInput
+  assignedTasks?: Prisma.TaskCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUncheckedCreateWithoutSuggestionDecisionsInput = {
@@ -663,6 +765,7 @@ export type UserUncheckedCreateWithoutSuggestionDecisionsInput = {
   ownedProjects?: Prisma.ProjectUncheckedCreateNestedManyWithoutOwnerInput
   memberships?: Prisma.ProjectMemberUncheckedCreateNestedManyWithoutUserInput
   taskEvents?: Prisma.TaskEventUncheckedCreateNestedManyWithoutActorInput
+  assignedTasks?: Prisma.TaskUncheckedCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserCreateOrConnectWithoutSuggestionDecisionsInput = {
@@ -691,6 +794,7 @@ export type UserUpdateWithoutSuggestionDecisionsInput = {
   ownedProjects?: Prisma.ProjectUpdateManyWithoutOwnerNestedInput
   memberships?: Prisma.ProjectMemberUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUpdateManyWithoutActorNestedInput
+  assignedTasks?: Prisma.TaskUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSuggestionDecisionsInput = {
@@ -704,6 +808,7 @@ export type UserUncheckedUpdateWithoutSuggestionDecisionsInput = {
   ownedProjects?: Prisma.ProjectUncheckedUpdateManyWithoutOwnerNestedInput
   memberships?: Prisma.ProjectMemberUncheckedUpdateManyWithoutUserNestedInput
   taskEvents?: Prisma.TaskEventUncheckedUpdateManyWithoutActorNestedInput
+  assignedTasks?: Prisma.TaskUncheckedUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserCreateWithoutTaskEventsInput = {
@@ -716,6 +821,7 @@ export type UserCreateWithoutTaskEventsInput = {
   ownedProjects?: Prisma.ProjectCreateNestedManyWithoutOwnerInput
   memberships?: Prisma.ProjectMemberCreateNestedManyWithoutUserInput
   suggestionDecisions?: Prisma.AiSuggestionCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserUncheckedCreateWithoutTaskEventsInput = {
@@ -729,6 +835,7 @@ export type UserUncheckedCreateWithoutTaskEventsInput = {
   ownedProjects?: Prisma.ProjectUncheckedCreateNestedManyWithoutOwnerInput
   memberships?: Prisma.ProjectMemberUncheckedCreateNestedManyWithoutUserInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedCreateNestedManyWithoutDecidedByInput
+  assignedTasks?: Prisma.TaskUncheckedCreateNestedManyWithoutAssigneeInput
 }
 
 export type UserCreateOrConnectWithoutTaskEventsInput = {
@@ -757,6 +864,7 @@ export type UserUpdateWithoutTaskEventsInput = {
   ownedProjects?: Prisma.ProjectUpdateManyWithoutOwnerNestedInput
   memberships?: Prisma.ProjectMemberUpdateManyWithoutUserNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUpdateManyWithoutAssigneeNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTaskEventsInput = {
@@ -770,6 +878,7 @@ export type UserUncheckedUpdateWithoutTaskEventsInput = {
   ownedProjects?: Prisma.ProjectUncheckedUpdateManyWithoutOwnerNestedInput
   memberships?: Prisma.ProjectMemberUncheckedUpdateManyWithoutUserNestedInput
   suggestionDecisions?: Prisma.AiSuggestionUncheckedUpdateManyWithoutDecidedByNestedInput
+  assignedTasks?: Prisma.TaskUncheckedUpdateManyWithoutAssigneeNestedInput
 }
 
 
@@ -782,6 +891,7 @@ export type UserCountOutputType = {
   memberships: number
   taskEvents: number
   suggestionDecisions: number
+  assignedTasks: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -789,6 +899,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   memberships?: boolean | UserCountOutputTypeCountMembershipsArgs
   taskEvents?: boolean | UserCountOutputTypeCountTaskEventsArgs
   suggestionDecisions?: boolean | UserCountOutputTypeCountSuggestionDecisionsArgs
+  assignedTasks?: boolean | UserCountOutputTypeCountAssignedTasksArgs
 }
 
 /**
@@ -829,6 +940,13 @@ export type UserCountOutputTypeCountSuggestionDecisionsArgs<ExtArgs extends runt
   where?: Prisma.AiSuggestionWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountAssignedTasksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.TaskWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -842,6 +960,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   memberships?: boolean | Prisma.User$membershipsArgs<ExtArgs>
   taskEvents?: boolean | Prisma.User$taskEventsArgs<ExtArgs>
   suggestionDecisions?: boolean | Prisma.User$suggestionDecisionsArgs<ExtArgs>
+  assignedTasks?: boolean | Prisma.User$assignedTasksArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -881,6 +1000,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   memberships?: boolean | Prisma.User$membershipsArgs<ExtArgs>
   taskEvents?: boolean | Prisma.User$taskEventsArgs<ExtArgs>
   suggestionDecisions?: boolean | Prisma.User$suggestionDecisionsArgs<ExtArgs>
+  assignedTasks?: boolean | Prisma.User$assignedTasksArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -893,6 +1013,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     memberships: Prisma.$ProjectMemberPayload<ExtArgs>[]
     taskEvents: Prisma.$TaskEventPayload<ExtArgs>[]
     suggestionDecisions: Prisma.$AiSuggestionPayload<ExtArgs>[]
+    assignedTasks: Prisma.$TaskPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: number
@@ -1300,6 +1421,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   memberships<T extends Prisma.User$membershipsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$membershipsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ProjectMemberPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   taskEvents<T extends Prisma.User$taskEventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$taskEventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TaskEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   suggestionDecisions<T extends Prisma.User$suggestionDecisionsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$suggestionDecisionsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AiSuggestionPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  assignedTasks<T extends Prisma.User$assignedTasksArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$assignedTasksArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TaskPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1822,6 +1944,30 @@ export type User$suggestionDecisionsArgs<ExtArgs extends runtime.Types.Extension
   take?: number
   skip?: number
   distinct?: Prisma.AiSuggestionScalarFieldEnum | Prisma.AiSuggestionScalarFieldEnum[]
+}
+
+/**
+ * User.assignedTasks
+ */
+export type User$assignedTasksArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the Task
+   */
+  select?: Prisma.TaskSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the Task
+   */
+  omit?: Prisma.TaskOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.TaskInclude<ExtArgs> | null
+  where?: Prisma.TaskWhereInput
+  orderBy?: Prisma.TaskOrderByWithRelationInput | Prisma.TaskOrderByWithRelationInput[]
+  cursor?: Prisma.TaskWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.TaskScalarFieldEnum | Prisma.TaskScalarFieldEnum[]
 }
 
 /**

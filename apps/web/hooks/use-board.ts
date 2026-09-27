@@ -37,6 +37,7 @@ interface UseBoardReturn {
   error: string | null;
   moveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
   reorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
+  assignTask: (taskId: number, assigneeId: number | null) => Promise<void>;
   createTask: (input: CreateTaskInput) => Promise<Task>;
   markDependenciesPosted: (taskId: number) => void;
   pendingReadinessIds: Set<number>;
@@ -181,6 +182,42 @@ export function useBoard(projectId: number): UseBoardReturn {
           return next;
         });
         toast({ type: "error", message: err?.error?.message ?? "Reorder failed" });
+        throw err;
+      }
+    },
+    [toast]
+  );
+
+  const assignTask = useCallback(
+    async (taskId: number, assigneeId: number | null) => {
+      let snapshot: Task | undefined;
+      setTasks((prev) => {
+        const task = prev.get(taskId);
+        snapshot = task;
+        if (!task) return prev;
+        const next = new Map(prev);
+        next.set(taskId, { ...task, assigneeId });
+        return next;
+      });
+
+      try {
+        await apiClient(`/tasks/${taskId}/assign`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assigneeId }),
+        });
+        toast({
+          type: "success",
+          message: assigneeId === null ? "Task unassigned" : `Task assigned to member #${assigneeId}`,
+        });
+      } catch (err: any) {
+        setTasks((prev) => {
+          if (!snapshot) return prev;
+          const next = new Map(prev);
+          next.set(taskId, snapshot);
+          return next;
+        });
+        toast({ type: "error", message: err?.error?.message ?? "Assign failed" });
         throw err;
       }
     },
@@ -359,6 +396,7 @@ export function useBoard(projectId: number): UseBoardReturn {
     error,
     moveTask,
     reorderTask,
+    assignTask,
     createTask,
     markDependenciesPosted,
     pendingReadinessIds,

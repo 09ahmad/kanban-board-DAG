@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { MoveTaskSchema, TaskIdParamsSchema, UpdateTaskSchema } from "@repo/types";
+import { AssignTaskSchema, MoveTaskSchema, TaskIdParamsSchema, UpdateTaskSchema } from "@repo/types";
 import { taskController } from "../controllers/task.controller.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { authMiddleware } from "../middleware/authMiddleware.js";
@@ -20,6 +20,12 @@ taskRouter.patch(
   validate(TaskIdParamsSchema, "params"),
   validate(MoveTaskSchema),
   asyncHandler(taskController.move),
+);
+taskRouter.patch(
+  "/:taskId/assign",
+  validate(TaskIdParamsSchema, "params"),
+  validate(AssignTaskSchema),
+  asyncHandler(taskController.assign),
 );
 taskRouter.delete(
   "/:taskId",

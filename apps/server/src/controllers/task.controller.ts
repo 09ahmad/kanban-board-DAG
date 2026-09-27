@@ -34,6 +34,14 @@ export const taskController = {
     );
     res.json({ success: true, data });
   },
+  assign: async (req: Request, res: Response) => {
+    const data = await taskService.assignTask(
+      Number(req.params.taskId),
+      req.body,
+      req.user!.userId,
+    );
+    res.json({ success: true, data });
+  },
   remove: async (req: Request, res: Response) => {
     await taskService.deleteTask(Number(req.params.taskId), req.user!.userId);
     res.json({ success: true, data: { deleted: true } });

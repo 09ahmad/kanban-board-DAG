@@ -11,6 +11,8 @@ interface TaskCardProps {
   onClick?: (taskId: number) => void;
   onDeleteTask?: (taskId: number) => void;
   onManageDependencies?: (taskId: number) => void;
+  onAssign?: (taskId: number, assigneeId: number | null) => void;
+  members?: Array<{ id: number; userId: number; name: string; role: string }>;
   columnId?: TaskStatus;
   isCritical?: boolean;
   readinessPending?: boolean;
@@ -45,6 +47,8 @@ export function TaskCard({
   onClick,
   onDeleteTask,
   onManageDependencies,
+  onAssign,
+  members,
   columnId,
   isCritical,
   readinessPending,
@@ -53,6 +57,7 @@ export function TaskCard({
   sortableStyle,
   isDragging,
 }: TaskCardProps) {
+  const assignee = members?.find((m) => m.userId === task.assigneeId);
   // A pending badge is neutral on purpose: the DAG Engine owns this value and
   // has not reported one for this task yet.
   const readinessColor = readinessPending ? "#e6dfd8" : getStatusColor(task.status, task.readiness);
@@ -127,6 +132,16 @@ export function TaskCard({
         {task.status}
       </span>
 
+      {/* Assignee avatar */}
+      {assignee && (
+        <span
+          title={`Assigned to ${assignee.name}`}
+          className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-[10px] flex-shrink-0"
+        >
+          {assignee.name.charAt(0).toUpperCase()}
+        </span>
+      )}
+
       {/* Readiness indicator — held at "Calculating…" until the graph reports it */}
       {readinessPending && (
         <span className="absolute -right-1.5 -top-1.5 px-1.5 py-0.5 rounded bg-surface-card border border-hairline text-[10px] font-medium text-muted whitespace-nowrap">
@@ -165,8 +180,49 @@ export function TaskCard({
           {menuOpen && (
             <div
               role="menu"
-              className="absolute right-0 top-6 z-30 min-w-[160px] bg-surface-card border border-hairline rounded-md shadow-lg py-1"
+              className="absolute right-0 top-6 z-30 min-w-[180px] bg-surface-card border border-hairline rounded-md shadow-lg py-1"
             >
+              {onAssign && members && members.length > 0 && (
+                <div className="py-1 border-b border-hairline" role="group" aria-label="Assign to">
+                  <p className="px-3 py-1 text-[11px] text-muted uppercase tracking-wide">Assign to</p>
+                  {assignee && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpen(false);
+                        onAssign(task.id, null);
+                      }}
+                      className="w-full px-3 py-1.5 text-left text-[13px] text-muted hover:bg-surface-soft flex items-center gap-2"
+                    >
+                      × Unassign
+                    </button>
+                  )}
+                  {members.map((member) => (
+                    <button
+                      key={member.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpen(false);
+                        onAssign(task.id, member.userId);
+                      }}
+                      className={cn(
+                        "w-full px-3 py-1.5 text-left text-[13px] hover:bg-surface-soft flex items-center gap-2",
+                        member.userId === task.assigneeId ? "text-primary font-medium" : "text-ink"
+                      )}
+                    >
+                      <span className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-on-primary font-medium text-[10px]">
+                        {member.name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="truncate">{member.name}</span>
+                      {member.role === "OWNER" && <span className="text-[10px] text-muted">owner</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
               {onManageDependencies && (
                 <button
                   type="button"
