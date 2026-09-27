@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useBoard } from "@/hooks/use-board";
+import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { KanbanBoard } from "@/components/kanban-board/board";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -351,6 +352,23 @@ function DeleteTaskDialog({
 }
 
 function TaskDetailModal({ taskId, onClose }: { taskId: number; onClose: () => void }) {
+  const [task, setTask] = useState<Task | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient<Task>(`/tasks/${taskId}`)
+      .then((res) => {
+        if (!cancelled) setTask(unwrapResponse(res));
+      })
+      .catch((err: any) => {
+        if (!cancelled) setError(err?.error?.message ?? "Failed to load task");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-surface-card rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
@@ -362,12 +380,44 @@ function TaskDetailModal({ taskId, onClose }: { taskId: number; onClose: () => v
             </svg>
           </button>
         </div>
-        <p className="text-body text-[14px]">
-          Full detail view:{" "}
-          <a href={`/task/${taskId}`} className="text-primary hover:underline">
-            Open task page
-          </a>
-        </p>
+
+        {error && (
+          <div className="bg-error/10 border border-error/20 rounded-lg p-3 text-error text-[14px]">{error}</div>
+        )}
+
+        {!task && !error && <p className="text-muted text-[14px]">Loading task…</p>}
+
+        {task && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-display text-[24px] text-ink">{task.title}</h3>
+              {task.description && (
+                <p className="text-body text-[14px] mt-1 text-ink/80">{task.description}</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Badge variant={task.readiness === "READY" ? "ready" : "blocked"}>{task.readiness}</Badge>
+              <Badge variant={task.status === "BACKLOG" ? "pill" : task.status === "IN_PROGRESS" ? "in-progress" : task.status === "REVIEW" ? "review" : "done"}>
+                {task.status.replace("_", " ")}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-[13px]">
+              <div className="bg-surface-soft rounded-lg p-3">
+                <p className="text-muted uppercase tracking-wide text-[11px] mb-1">Computed start</p>
+                <p className="text-ink font-medium">{task.computedStart ? new Date(task.computedStart).toLocaleDateString() : "—"}</p>
+              </div>
+              <div className="bg-surface-soft rounded-lg p-3">
+                <p className="text-muted uppercase tracking-wide text-[11px] mb-1">Computed end</p>
+                <p className="text-ink font-medium">{task.computedEnd ? new Date(task.computedEnd).toLocaleDateString() : "—"}</p>
+              </div>
+            </div>
+            <div className="flex justify-end pt-2">
+              <a href={`/task/${taskId}`} className="text-primary hover:underline text-[14px] font-medium">
+                Open full page →
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

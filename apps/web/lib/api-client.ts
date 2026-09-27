@@ -18,6 +18,10 @@ const apiClient = async <T>(endpoint: string, options: RequestInit = {}): Promis
   const data = await response.json();
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login") && !window.location.pathname.startsWith("/register")) {
+      localStorage.removeItem("jwt_token");
+      window.location.href = "/login";
+    }
     const error: ApiErrorResponse = {
       success: false,
       error: { code: data.error?.code ?? "UNKNOWN_ERROR", message: data.error?.message ?? "Something went wrong" },

@@ -145,8 +145,8 @@ export default function ProjectsPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-2">
-                    <Badge variant="pill">{project.tasks?.length ?? 0} tasks</Badge>
-                    <Badge variant="pill">{project.members?.length ?? 0} members</Badge>
+                    <Badge variant="pill">{project._count?.tasks ?? project.tasks?.length ?? 0} tasks</Badge>
+                    <Badge variant="pill">{project._count?.members ?? project.members?.length ?? 0} members</Badge>
                   </div>
                 </Card>
               </Link>

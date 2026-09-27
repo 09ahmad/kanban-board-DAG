@@ -36,7 +36,7 @@ export default function ProjectGraphPage({ params }: { params: Promise<{ project
       setDependencies(data.dependencies);
       setError(null);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to load graph");
+      setError(err?.error?.message ?? "Failed to load graph");
     } finally {
       setLoading(false);
     }

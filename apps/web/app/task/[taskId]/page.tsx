@@ -236,7 +236,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setEditing(true)}>Edit</Button>
+              <>
+                <Button onClick={() => setEditing(true)}>Edit</Button>
+                <Button variant="danger" onClick={handleDeleteTask} disabled={deleting}>
+                  {deleting ? "Deleting…" : "Delete"}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -245,11 +250,31 @@ export default function TaskDetailPage({ params }: { params: Promise<{ taskId: s
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="card p-4">
             <p className="text-[12px] text-muted uppercase tracking-wide mb-1">Planned Start</p>
-            <p className="text-[14px] text-ink font-medium">{task.plannedStart ? new Date(task.plannedStart).toLocaleDateString() : "—"}</p>
+            {editing ? (
+              <input
+                type="date"
+                value={plannedStart}
+                onChange={(e) => setPlannedStart(e.target.value)}
+                className="input w-full mt-1"
+              />
+            ) : (
+              <p className="text-[14px] text-ink font-medium">{task.plannedStart ? new Date(task.plannedStart).toLocaleDateString() : "—"}</p>
+            )}
           </div>
           <div className="card p-4">
             <p className="text-[12px] text-muted uppercase tracking-wide mb-1">Duration</p>
-            <p className="text-[14px] text-ink font-medium">{task.duration ? `${task.duration}d` : "—"}</p>
+            {editing ? (
+              <input
+                type="number"
+                min="1"
+                placeholder="Days"
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                className="input w-full mt-1"
+              />
+            ) : (
+              <p className="text-[14px] text-ink font-medium">{task.duration ? `${task.duration}d` : "—"}</p>
+            )}
           </div>
           <div className="card p-4">
             <p className="text-[12px] text-muted uppercase tracking-wide mb-1">Computed Start</p>

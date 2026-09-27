@@ -20,6 +20,7 @@ export interface Project {
   createdAt?: string;
   members?: ProjectMember[];
   tasks?: Task[];
+  _count?: { tasks: number; members: number };
 }
 
 export interface Task {

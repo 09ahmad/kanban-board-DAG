@@ -41,4 +41,7 @@ yarn-error.log*
 .remember
 EVAL_CRITERIA.md
 IMPLEMENTATION.md
-EVAL_CRITERIA.md
+
+# Binary docs (not for git)
+*.xlsx
+TaskFlow_Pro_Synopsis_v6.xlsx

@@ -15,6 +15,7 @@ import { EditProjectModal, DeleteProjectModal } from "@/components/project-actio
 import { CriticalPathDisplay } from "@/components/critical-path-display";
 import { ProjectEvents } from "@/components/project-events";
 import { useBoard } from "@/hooks/use-board";
+import { useAuth } from "@/lib/auth-context";
 import type { Project, ProjectMember, Task, TaskDependency } from "@repo/types";
 import { ProjectRole, TaskStatus } from "@repo/types";
 import { useToast } from "@/components/toaster";
@@ -34,6 +35,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
   const router = useRouter();
   const { toast } = useToast();
   const { columns, createTask, refetch: refetchBoard } = useBoard(projectId);
+  const { user } = useAuth();
   const [project, setProject] = useState<ProjectDetailData["project"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +155,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ projec
     );
   }
 
-  const currentUserId = project.ownerId;
+  const currentUserId = user?.id ?? project.ownerId;
   const isOwner = project.members.some((m) => m.userId === currentUserId && m.role === ProjectRole.OWNER);
 
 

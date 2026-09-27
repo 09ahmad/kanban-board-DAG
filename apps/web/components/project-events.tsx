@@ -106,7 +106,7 @@ export function ProjectEvents({ projectId, onClose }: ProjectEventsProps) {
       }
       setHasMore(newEvents.length === 50);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to load events");
+      setError(err?.error?.message ?? "Failed to load events");
     } finally {
       setLoading(false);
       setLoadingMore(false);

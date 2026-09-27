@@ -58,7 +58,7 @@ export function AddDependencyModal({ tasks, dependencies, onClose, onAdd }: AddD
       await onAdd(Number(prerequisiteTaskId), Number(dependentTaskId));
       onClose();
     } catch (err: any) {
-      setError(err?.message ?? "Failed to add dependency");
+      setError(err?.error?.message ?? "Failed to add dependency");
     } finally {
       setAdding(false);
     }

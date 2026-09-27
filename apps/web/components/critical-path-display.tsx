@@ -28,7 +28,7 @@ export function CriticalPathDisplay({ projectId, tasks, dependencies, onClose }:
       const data = await fetchCriticalPath();
       setCriticalPath(data);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to load critical path");
+      setError(err?.error?.message ?? "Failed to load critical path");
     } finally {
       setLoading(false);
     }

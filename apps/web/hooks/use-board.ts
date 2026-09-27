@@ -99,7 +99,7 @@ export function useBoard(projectId: number): UseBoardReturn {
         }
         return true;
       } catch (err: any) {
-        if (!silent) setError(err?.message ?? "Failed to load board");
+        if (!silent) setError(err?.error?.message ?? "Failed to load board");
         return false;
       } finally {
         if (!silent) setLoading(false);

@@ -25,17 +25,27 @@ export class ProjectService {
     });
   }
 
-  async getProjects(userId: number): Promise<Project[]> {
+  async getProjects(userId: number): Promise<(Project & { _count: { tasks: number; members: number } })[]> {
     return prisma.project.findMany({
       where: { members: { some: { userId } } },
       orderBy: { updatedAt: "desc" },
+      include: {
+        _count: {
+          select: { tasks: true, members: true },
+        },
+      },
     });
   }
 
-  async getProject(projectId: number, userId: number): Promise<Project & { members: ProjectMember[] }> {
+  async getProject(projectId: number, userId: number): Promise<Project & { members: ProjectMember[]; _count: { tasks: number; members: number } }> {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      include: { members: true },
+      include: {
+        members: true,
+        _count: {
+          select: { tasks: true, members: true },
+        },
+      },
     });
     if (!project) throw new NotFoundError("Project");
     const membership = project.members.find((m) => m.userId === userId);
