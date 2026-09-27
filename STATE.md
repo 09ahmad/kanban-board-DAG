@@ -70,9 +70,10 @@ as a description of the current tree.
 - `docker compose config -q` validates; the web image is built with
   `API_INTERNAL_URL` / `WS_INTERNAL_URL` baked in at build time
 - `.env` is gitignored; `.env.example` has no real secrets
-- Most server integration suites truncate shared tables, so `bun test` needs
-  `DATABASE_URL` pointed at a scratch database. Against the development database
-  it will delete whatever is in it, including anything a local server is using.
+- Server integration suites take a per-run identity and delete only what they
+  created, so `bun test` is safe against any database. They used to empty the
+  tables in `beforeAll`, which meant running the suite deleted whatever else was
+  there, including a developer's own accounts and projects.
 
 ## Known limitations (see `docs/ARCHITECTURE.md` §4 for the full list)
 - Auth uses `localStorage` JWT (documented simplification, not production-grade).
@@ -91,15 +92,20 @@ as a description of the current tree.
 
 ## Open work
 
-Verified still open against the code on 2026-09-27, from the audit's section 6:
+Verified against the code on 2026-09-27, from the audit's section 6:
 
 | # | Item | Notes |
 |---|------|-------|
 | 1 | Loading skeletons | Spinners only. Not a correctness issue. |
 | 2 | Token refresh / session management | Not needed for the stated scope: the login lasts 30 days and is configurable, so a lapse means signing in again. Full rotation would still need a refresh endpoint and revocation story, which is a larger change than the audit asked for. |
-| 3 | Deleting a dependency asks first | A task's page confirms before deleting the task, and a project confirms before deletion, but removing a single dependency edge still happens immediately. `ConfirmDialog` already covers the case. |
 
 Resolved since the audit list was written:
+
+- **Deleting a dependency asks first.** Both places that remove an edge — the
+  board's dependency list and a task's own page — go through `ConfirmDialog`, and
+  the copy says what will change: which task stops waiting on which. It was the
+  last destructive action that did not ask, and it was the one most likely to be
+  misclicked, since the button is a small trash icon in a row of others.
 
 - **Toast notifications for updates made by other clients.** `WsEventBroadcast`
   now carries `actorId`, threaded through the task and dependency services

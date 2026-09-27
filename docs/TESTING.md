@@ -18,9 +18,13 @@ Pure functions, no I/O, no database.
 | `convergence.test.ts` | 1 | Diamond A→B, A→C, B→D, C→D; A shifts +3d; D shifts +3d exactly once |
 
 ## Server Tests (75 tests)
-Drive the real Express app against a live PostgreSQL and Redis. **Most of these
-truncate shared tables between files** — point `DATABASE_URL` at a scratch
-database, or running the suite will delete whatever else is in it.
+Drive the real Express app against a live PostgreSQL and Redis.
+
+These suites take a per-run identity and delete only what they created, so they
+are safe to run against any database and can be run twice in a row. They no
+longer empty the tables, which means `DATABASE_URL` no longer has to point
+somewhere throwaway — the scratch-database advice below is now belt and braces
+rather than a requirement.
 
 | File | Tests | Coverage |
 |------|-------|----------|
@@ -101,6 +105,10 @@ bun test apps/server/src/__tests__                # server integration only
 bun test apps/web                                 # web app only
 bun test apps/ws-server                           # WebSocket server only
 ```
+
+Two consecutive full runs should both pass and leave the database as they found
+it; anything else means a suite is leaking rows or depending on another suite
+having emptied the tables first.
 
 Per-file counts, if you want to regenerate this table:
 ```bash
