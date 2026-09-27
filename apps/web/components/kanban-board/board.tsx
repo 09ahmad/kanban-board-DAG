@@ -3,6 +3,7 @@
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -10,6 +11,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useState, useCallback, useMemo } from "react";
 import type { Task, TaskDependency } from "@repo/types";
 import { TaskStatus } from "@repo/types";
@@ -133,8 +135,13 @@ export function KanbanBoard({
   const [activeId, setActiveId] = useState<number | null>(null);
   const { toast } = useToast();
 
+  // Pointer alone left the board unusable without a mouse. dnd-kit's
+  // keyboard sensor drives the same onDragEnd path, so a card moves with
+  // Space, the arrow keys, and Space again — and announces each step through
+  // its live region.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
   const criticalSet = useMemo(() => new Set(criticalTaskIds), [criticalTaskIds]);

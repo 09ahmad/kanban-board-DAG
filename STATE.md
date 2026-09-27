@@ -6,7 +6,7 @@ All verification passes:
 - `bun run build` ✓ (Turbopack)
 - `bun run check-types` ✓ (all 6 packages)
 - `bun run lint` ✓ (0 warnings)
-- `bun test` ✓ (168 pass, 0 fail, 24 files)
+- `bun test` ✓ (169 pass, 0 fail, 24 files)
 
 Feature-complete against the audit list except the items under **Open work** below.
 Counts and inventories here were regenerated from the tree on 2026-09-27; if they
@@ -27,7 +27,7 @@ drift, regenerate rather than trusting them.
 - Hooks: `use-board`, `use-websocket`, `use-ai-suggestions`
 - Lib: `api-client`, `auth-context`, `utils`
 - Tailwind v4 (`@tailwindcss/postcss`), custom CSS classes in `app/globals.css`
-- Drag-and-drop via `@dnd-kit/core` (`PointerSensor` only — see Open work)
+- Drag-and-drop via `@dnd-kit/core`, with `PointerSensor` and `KeyboardSensor`
 
 ### Backend (`apps/server/`)
 - Express REST API (port 4000) + pure-TS DAG engine (`src/engine/`)
@@ -90,10 +90,20 @@ Verified still open against the code on 2026-09-27, from the audit's section 6:
 
 | # | Item | Notes |
 |---|------|-------|
-| 1 | Toast notifications for updates made by *other* clients | Toasts fire for local actions only. `DEPENDENCY_ADDED` / `TASK_MOVED` from another tab are applied silently. |
-| 2 | Keyboard accessibility for the board | `DndContext` registers only `PointerSensor`, so a card cannot be moved by keyboard. dnd-kit supplies the ARIA live regions, but there is no `KeyboardSensor` and no key handler on the cards. |
-| 3 | Loading skeletons | Spinners only. Not a correctness issue. |
-| 4 | Token refresh / session management | Needs a refresh endpoint and rotation, not a frontend change alone. |
+| 1 | Toast notifications for updates made by *other* clients | Toasts fire for local actions only. `DEPENDENCY_ADDED` / `TASK_MOVED` from another tab are applied silently. Note the blocker: the WebSocket broadcast (`WsEventBroadcast`) carries no `actorId` — only the persisted `TaskEvent` does — so the client cannot currently tell whose change arrived. Doing this properly means threading the actor through the two services and the event contract first, and deciding how chatty it should be. |
+| 2 | Loading skeletons | Spinners only. Not a correctness issue. |
+| 3 | Token refresh / session management | Needs a refresh endpoint and rotation, not a frontend change alone. |
+
+Fixed but not covered by an automated test, for the record:
+
+- **Keyboard dragging on the board.** `DndContext` now registers dnd-kit's
+  `KeyboardSensor` alongside the pointer sensor, so a card can be lifted, moved
+  and dropped with Space and the arrow keys. The drag sequence itself cannot be
+  tested here: dnd-kit measures element rects to decide where a keyboard move
+  lands, happy-dom reports every element as zero-sized, and the rendered markup
+  is identical with and without the sensor. It needs a real browser — a
+  Playwright test or a manual pass. The shared move logic (`resolveDrop`,
+  `performDrop`) is unit-tested; what is untested is dnd-kit's own key handling.
 
 Deliberately out of scope, for the record:
 

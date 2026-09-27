@@ -1,6 +1,6 @@
 import "../../../happydom";
 import { describe, test, expect, mock, beforeEach } from "bun:test";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, cleanup, fireEvent } from "@testing-library/react";
 import type { Task, TaskDependency, TaskStatus, ReadinessState } from "@repo/types";
 
 const toasts: { type: string; message: string }[] = [];
@@ -234,4 +234,26 @@ describe("drop notifications", () => {
     await performDrop({ kind: "none" }, d);
     expect(calls).toEqual([]);
   });
+});
+
+describe("KanbanBoard keyboard access", () => {
+  test("cards are reachable by Tab", () => {
+    renderBoard();
+
+    // A draggable that cannot be focused is invisible to the keyboard. dnd-kit
+    // supplies this via its sortable attributes.
+    for (const card of cards()) {
+      expect(card.getAttribute("tabindex")).toBe("0");
+    }
+  });
+
+  // The keyboard drag itself — Space to lift, arrows to move, Space to drop — is
+  // deliberately not covered here. dnd-kit measures rects to decide where a
+  // keyboard move lands, and happy-dom reports every element as zero-sized, so
+  // no drag ever starts; the pointer path is equally silent, and the rendered
+  // markup is identical with and without the sensor. A test here would be
+  // asserting on a mock of dnd-kit rather than on this board. The move logic is
+  // covered directly through resolveDrop and performDrop, which both sensors
+  // share; what is untested is dnd-kit's key handling, which wants a real
+  // browser.
 });
