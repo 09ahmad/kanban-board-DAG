@@ -14,6 +14,7 @@ interface KanbanColumnProps {
   onTaskClick: (taskId: number) => void;
   onDeleteTask?: (taskId: number) => void;
   criticalTaskIds: number[];
+  pendingReadinessIds: Set<number>;
 }
 
 export function KanbanColumn({
@@ -24,6 +25,7 @@ export function KanbanColumn({
   onTaskClick,
   onDeleteTask,
   criticalTaskIds,
+  pendingReadinessIds,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -63,6 +65,7 @@ export function KanbanColumn({
               onDeleteTask={onDeleteTask}
               isCritical={criticalSet.has(task.id)}
               columnId={id}
+              readinessPending={pendingReadinessIds.has(task.id)}
             />
           ))}
         </SortableContext>

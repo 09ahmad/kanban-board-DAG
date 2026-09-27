@@ -12,6 +12,7 @@ interface KanbanBoardProps {
   columns: Array<{ id: TaskStatus; title: string; tasks: Task[] }>;
   dependencies: TaskDependency[];
   criticalTaskIds: number[];
+  pendingReadinessIds: Set<number>;
   onMoveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
   onReorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
   onTaskClick: (taskId: number) => void;
@@ -22,6 +23,7 @@ export function KanbanBoard({
   columns,
   dependencies,
   criticalTaskIds,
+  pendingReadinessIds,
   onMoveTask,
   onReorderTask,
   onTaskClick,
@@ -112,6 +114,7 @@ export function KanbanBoard({
             onTaskClick={onTaskClick}
             onDeleteTask={onDeleteTask}
             criticalTaskIds={criticalTaskIds}
+            pendingReadinessIds={pendingReadinessIds}
           />
         ))}
       </div>
@@ -119,7 +122,11 @@ export function KanbanBoard({
       {activeTask && (
         <DragOverlay>
           <div className="bg-surface-card border border-hairline rounded-md p-3 shadow-md">
-            <TaskCard task={activeTask} isCritical={criticalSet.has(activeTask.id)} />
+            <TaskCard
+              task={activeTask}
+              isCritical={criticalSet.has(activeTask.id)}
+              readinessPending={pendingReadinessIds.has(activeTask.id)}
+            />
           </div>
         </DragOverlay>
       )}

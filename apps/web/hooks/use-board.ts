@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiClient, unwrapResponse } from "@/lib/api-client";
 import { useToast } from "@/components/toaster";
 import type { Task, TaskDependency, TaskEvent, CreateTaskInput } from "@repo/types";
@@ -16,6 +16,19 @@ interface CriticalPathResult {
   totalDurationDays: number;
 }
 
+interface GraphResponse {
+  tasks: Task[];
+  dependencies: TaskDependency[];
+}
+
+/** Tracks how stale a newly created card's readiness badge is. */
+interface PendingReadiness {
+  /** True once every selected prerequisite has been posted. */
+  dependenciesPosted: boolean;
+  /** A graph request is only trusted when it started after this sequence. */
+  trustedAfterSeq: number;
+}
+
 interface UseBoardReturn {
   tasks: Map<number, Task>;
   dependencies: TaskDependency[];
@@ -25,12 +38,15 @@ interface UseBoardReturn {
   moveTask: (taskId: number, status: TaskStatus, position?: number) => Promise<void>;
   reorderTask: (taskId: number, newPosition: number, status: TaskStatus) => Promise<void>;
   createTask: (input: CreateTaskInput) => Promise<Task>;
+  markDependenciesPosted: (taskId: number) => void;
+  pendingReadinessIds: Set<number>;
   deleteTask: (taskId: number) => Promise<void>;
+  fetchDependents: (taskId: number) => Promise<Task[]>;
   createDependency: (prerequisiteTaskId: number, dependentTaskId: number) => Promise<void>;
   deleteDependency: (dependencyId: number) => Promise<void>;
   fetchCriticalPath: () => Promise<CriticalPathResult | null>;
   fetchEvents: (limit?: number, before?: number) => Promise<TaskEvent[]>;
-  refetch: () => Promise<void>;
+  refetch: (options?: { silent?: boolean }) => Promise<boolean>;
 }
 
 const statusOrder: TaskStatus[] = ["BACKLOG", "IN_PROGRESS", "REVIEW", "DONE"];
@@ -42,24 +58,62 @@ export function useBoard(projectId: number): UseBoardReturn {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const refetch = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await apiClient<{ tasks: Task[]; dependencies: TaskDependency[] }>(
-        `/projects/${projectId}/graph`
-      );
-      const data = unwrapResponse(res);
-      const taskMap = new Map<number, Task>();
-      data.tasks.forEach((t) => taskMap.set(t.id, t));
-      setTasks(taskMap);
-      setDependencies(data.dependencies);
-      setError(null);
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to load board");
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
+  // A task created in this session shows "Calculating…" until a refresh that
+  // started after its prerequisites were posted brings back the readiness the
+  // DAG Engine derived. The map only records how stale each card's badge is —
+  // the value itself is never derived here.
+  const [pendingReadiness, setPendingReadiness] = useState<Map<number, PendingReadiness>>(new Map());
+  const pendingRef = useRef<Map<number, PendingReadiness>>(new Map());
+  const refetchSeqRef = useRef(0);
+  const readinessRetry = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const writePending = useCallback((next: Map<number, PendingReadiness>) => {
+    pendingRef.current = next;
+    setPendingReadiness(next);
+  }, []);
+
+  const refetch = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      const silent = options?.silent ?? false;
+      const startSeq = refetchSeqRef.current + 1;
+      refetchSeqRef.current = startSeq;
+
+      if (!silent) setLoading(true);
+      try {
+        const res = await apiClient<GraphResponse>(`/projects/${projectId}/graph`);
+        const data = unwrapResponse(res);
+        const taskMap = new Map<number, Task>();
+        data.tasks.forEach((t) => taskMap.set(t.id, t));
+        setTasks(taskMap);
+        setDependencies(data.dependencies);
+        setError(null);
+
+        if (pendingRef.current.size > 0) {
+          const next = new Map(pendingRef.current);
+          next.forEach((entry, id) => {
+            // Every prerequisite posted, and this request started after that —
+            // so the snapshot in hand includes them all.
+            if (entry.dependenciesPosted && startSeq > entry.trustedAfterSeq) next.delete(id);
+          });
+          if (next.size !== pendingRef.current.size) writePending(next);
+        }
+        return true;
+      } catch (err: any) {
+        if (!silent) setError(err?.message ?? "Failed to load board");
+        return false;
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [projectId, writePending]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (readinessRetry.current) clearTimeout(readinessRetry.current);
+    };
+  }, []);
+
 
   useEffect(() => {
     refetch();
@@ -145,17 +199,80 @@ export function useBoard(projectId: number): UseBoardReturn {
           ...(input.duration ? { duration: input.duration } : {}),
         }),
       });
-      return unwrapResponse(res);
+      const task = unwrapResponse(res);
+
+      // The server answers with a placeholder readiness, so the card is shown
+      // right away but its badge stays on "Calculating…" until a refresh
+      // carries the value the DAG Engine derived.
+      setTasks((prev) => {
+        const next = new Map(prev);
+        next.set(task.id, task);
+        return next;
+      });
+
+      const pending = new Map(pendingRef.current);
+      pending.set(task.id, { dependenciesPosted: false, trustedAfterSeq: refetchSeqRef.current });
+      writePending(pending);
+
+      return task;
     },
-    [projectId]
+    [projectId, writePending]
+  );
+
+  const markDependenciesPosted = useCallback(
+    (taskId: number) => {
+      const entry = pendingRef.current.get(taskId);
+      if (!entry) return;
+
+      const pending = new Map(pendingRef.current);
+      pending.set(taskId, { dependenciesPosted: true, trustedAfterSeq: refetchSeqRef.current });
+      writePending(pending);
+
+      // Every prerequisite has been answered, so a refresh started now returns
+      // the readiness the DAG Engine derived for this task.
+      void refetch({ silent: true }).then((ok) => {
+        if (ok) return;
+        // One retry: a card stuck on "Calculating…" misleads more than a delay does.
+        if (readinessRetry.current) clearTimeout(readinessRetry.current);
+        readinessRetry.current = setTimeout(() => {
+          void refetch({ silent: true });
+        }, 3000);
+      });
+    },
+    [writePending, refetch]
   );
 
   const deleteTask = useCallback(
     async (taskId: number) => {
       await apiClient(`/tasks/${taskId}`, { method: "DELETE" });
-      await refetch();
+
+      setTasks((prev) => {
+        if (!prev.has(taskId)) return prev;
+        const next = new Map(prev);
+        next.delete(taskId);
+        return next;
+      });
+
+      if (pendingRef.current.has(taskId)) {
+        const pending = new Map(pendingRef.current);
+        pending.delete(taskId);
+        writePending(pending);
+      }
     },
-    [refetch]
+    [writePending]
+  );
+
+  const fetchDependents = useCallback(
+    async (taskId: number): Promise<Task[]> => {
+      const res = await apiClient<GraphResponse>(`/projects/${projectId}/graph`);
+      const data = unwrapResponse(res);
+      const byId = new Map(data.tasks.map((t) => [t.id, t]));
+      return data.dependencies
+        .filter((edge) => edge.prerequisiteTaskId === taskId)
+        .map((edge) => byId.get(edge.dependentTaskId))
+        .filter((t): t is Task => Boolean(t));
+    },
+    [projectId]
   );
 
   const createDependency = useCallback(
@@ -167,7 +284,7 @@ export function useBoard(projectId: number): UseBoardReturn {
           body: JSON.stringify({ prerequisiteTaskId, dependentTaskId }),
         });
         toast({ type: "success", message: "Dependency created" });
-        await refetch();
+        await refetch({ silent: true });
       } catch (err: any) {
         toast({ type: "error", message: err?.error?.message ?? "Failed to create dependency" });
         throw err;
@@ -218,5 +335,25 @@ export function useBoard(projectId: number): UseBoardReturn {
     tasks: Array.from(tasks.values()).filter((t) => t.status === status),
   }));
 
-  return { tasks, dependencies, columns, loading, error, moveTask, reorderTask, createTask, deleteTask, createDependency, deleteDependency, fetchCriticalPath, fetchEvents, refetch };
+  const pendingReadinessIds = useMemo(() => new Set(pendingReadiness.keys()), [pendingReadiness]);
+
+  return {
+    tasks,
+    dependencies,
+    columns,
+    loading,
+    error,
+    moveTask,
+    reorderTask,
+    createTask,
+    markDependenciesPosted,
+    pendingReadinessIds,
+    deleteTask,
+    fetchDependents,
+    createDependency,
+    deleteDependency,
+    fetchCriticalPath,
+    fetchEvents,
+    refetch,
+  };
 }

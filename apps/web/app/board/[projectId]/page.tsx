@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useBoard } from "@/hooks/use-board";
 import { KanbanBoard } from "@/components/kanban-board/board";
@@ -15,6 +15,9 @@ import { CriticalPathDisplay } from "@/components/critical-path-display";
 import { ProjectEvents } from "@/components/project-events";
 import type { TaskEventType, Task, CriticalPathResult } from "@repo/types";
 
+/** How long a delete waits for the graph event before falling back to REST. */
+const DELETE_FALLBACK_MS = 4000;
+
 export default function BoardPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId: projectIdStr } = use(params);
   const projectId = Number(projectIdStr);
@@ -27,7 +30,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
     moveTask,
     reorderTask,
     createTask,
+    markDependenciesPosted,
+    pendingReadinessIds,
     deleteTask,
+    fetchDependents,
     createDependency,
     deleteDependency,
     refetch,
@@ -45,6 +51,11 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
+  // Counts the graph events the socket has delivered, so a delete can tell
+  // whether anything arrived during the wait.
+  const graphEventCount = useRef(0);
+  const deleteFallback = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const loadCriticalPath = useCallback(async () => {
     const data = await fetchCriticalPath();
     if (data) setCriticalPath(data);
@@ -53,6 +64,12 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
   useEffect(() => {
     loadCriticalPath();
   }, [loadCriticalPath]);
+
+  useEffect(() => {
+    return () => {
+      if (deleteFallback.current) clearTimeout(deleteFallback.current);
+    };
+  }, []);
 
   const handleWSEvent = useCallback(
     (event: { type: TaskEventType; projectId: number; taskId?: number; payload: Record<string, unknown> }) => {
@@ -64,8 +81,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
       ];
 
       if (relevantEvents.includes(event.type)) {
-        refetch();
-        loadCriticalPath();
+        graphEventCount.current += 1;
+        // The event carries ids, not the derived values, so the graph is the
+        // single thing worth re-reading.
+        void refetch({ silent: true }).then(loadCriticalPath);
       }
 
       switch (event.type) {
@@ -85,35 +104,63 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
 
   useWebSocket(projectId, handleWSEvent);
 
+  const removeTask = useCallback(
+    async (task: Task) => {
+      const eventsBeforeDelete = graphEventCount.current;
+      await deleteTask(task.id);
+      toast({ type: "success", message: `Deleted "${task.title}"` });
+
+      if (deleteFallback.current) clearTimeout(deleteFallback.current);
+      deleteFallback.current = setTimeout(() => {
+        // Nothing arrived — read the graph so affected dependents still get the
+        // readiness the engine derived for them.
+        if (graphEventCount.current === eventsBeforeDelete) {
+          void refetch({ silent: true }).then(loadCriticalPath);
+        }
+      }, DELETE_FALLBACK_MS);
+    },
+    [deleteTask, refetch, loadCriticalPath, toast]
+  );
+
   const requestDeleteTask = useCallback(
-    (taskId: number) => {
+    async (taskId: number) => {
       const task = tasks.get(taskId);
       if (!task) return;
 
-      const dependents = dependencies
-        .filter((edge) => edge.prerequisiteTaskId === taskId)
-        .map((edge) => tasks.get(edge.dependentTaskId))
-        .filter((t): t is Task => Boolean(t));
+      let dependents: Task[];
+      try {
+        dependents = await fetchDependents(taskId);
+      } catch (err: any) {
+        toast({ type: "error", message: err?.error?.message ?? "Could not check what depends on this task" });
+        return;
+      }
+
+      if (dependents.length === 0) {
+        try {
+          await removeTask(task);
+        } catch (err: any) {
+          toast({ type: "error", message: err?.error?.message ?? "Could not delete the task" });
+        }
+        return;
+      }
 
       setPendingDelete({ task, dependents });
     },
-    [tasks, dependencies]
+    [tasks, fetchDependents, removeTask, toast]
   );
 
   const confirmDeleteTask = useCallback(async () => {
     if (!pendingDelete) return;
     setDeleting(true);
     try {
-      await deleteTask(pendingDelete.task.id);
-      toast({ type: "success", message: `Deleted "${pendingDelete.task.title}"` });
+      await removeTask(pendingDelete.task);
       setPendingDelete(null);
-      loadCriticalPath();
     } catch (err: any) {
       toast({ type: "error", message: err?.error?.message ?? "Could not delete the task" });
     } finally {
       setDeleting(false);
     }
-  }, [pendingDelete, deleteTask, loadCriticalPath, toast]);
+  }, [pendingDelete, removeTask, toast]);
 
   if (loading) {
     return (
@@ -175,6 +222,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
             columns={columns}
             dependencies={dependencies}
             criticalTaskIds={criticalPath?.criticalTaskIds ?? []}
+            pendingReadinessIds={pendingReadinessIds}
             onMoveTask={moveTask}
             onReorderTask={reorderTask}
             onTaskClick={setSelectedTaskId}
@@ -205,11 +253,10 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
       {showCreate && (
         <CreateTaskModal
           tasks={allTasks}
-          dependencies={dependencies}
           onClose={() => setShowCreate(false)}
           onCreateTask={createTask}
           onLinkDependency={createDependency}
-          onTasksChanged={refetch}
+          onDependenciesPosted={markDependenciesPosted}
         />
       )}
 
@@ -269,32 +316,26 @@ function DeleteTaskDialog({
       <div role="dialog" aria-modal="true" aria-labelledby="delete-task-heading" className="bg-surface-card rounded-xl p-6 w-full max-w-md">
         <h2 id="delete-task-heading" className="font-display text-[20px] text-ink">Delete &ldquo;{task.title}&rdquo;?</h2>
 
-        {dependents.length === 0 ? (
-          <p className="text-[14px] text-muted mt-2">
-            Nothing depends on this task, so deleting it changes no other task.
-          </p>
-        ) : (
-          <>
-            <p className="text-[14px] text-muted mt-2">
-              {dependents.length === 1 ? "One task is waiting" : `${dependents.length} tasks are waiting`} on it.
-              Deleting it removes {dependents.length === 1 ? "that dependency" : "those dependencies"}, and each
-              affected task&rsquo;s readiness is recalculated by the graph — not by this dialog.
-            </p>
-            <ul className="mt-4 space-y-1.5 max-h-48 overflow-y-auto">
-              {dependents.map((dependent) => (
-                <li
-                  key={dependent.id}
-                  className="flex items-center gap-2 text-[13px] px-3 py-2 rounded bg-surface-soft"
-                >
-                  <span className="flex-1 truncate text-ink">{dependent.title}</span>
-                  <Badge variant={dependent.readiness === "READY" ? "ready" : "blocked"} className="text-[11px] px-2 py-0.5">
-                    {dependent.readiness === "READY" ? "Ready" : "Blocked"}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        <p className="text-[14px] text-muted mt-2">
+          {dependents.length === 1 ? "1 task depends on it" : `${dependents.length} tasks depend on it`}.
+          Deleting this removes {dependents.length === 1 ? "that dependency" : "those dependencies"}, and each
+          affected task&rsquo;s readiness is recalculated by the graph — not by this dialog.
+        </p>
+
+        <ul className="mt-4 space-y-1.5 max-h-48 overflow-y-auto">
+          {dependents.map((dependent) => (
+            <li
+              key={dependent.id}
+              className="flex items-center gap-2 text-[13px] px-3 py-2 rounded bg-surface-soft"
+            >
+              <span className="flex-1 truncate text-ink">{dependent.title}</span>
+              {/* From the graph response — the engine's own value. */}
+              <Badge variant={dependent.readiness === "READY" ? "ready" : "blocked"} className="text-[11px] px-2 py-0.5">
+                {dependent.readiness === "READY" ? "Ready" : "Blocked"}
+              </Badge>
+            </li>
+          ))}
+        </ul>
 
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="secondary" onClick={onCancel} disabled={deleting}>

@@ -10,6 +10,7 @@ interface TaskCardProps {
   onDeleteTask?: (taskId: number) => void;
   columnId?: TaskStatus;
   isCritical?: boolean;
+  readinessPending?: boolean;
 }
 
 function getStatusColor(status: TaskStatus, readiness: ReadinessState): string {
@@ -29,8 +30,17 @@ function getStatusColor(status: TaskStatus, readiness: ReadinessState): string {
   return readinessOverride ? readinessOverride : statusColor;
 }
 
-export function TaskCard({ task, onClick, onDeleteTask, columnId, isCritical }: TaskCardProps) {
-  const readinessColor = getStatusColor(task.status, task.readiness);
+export function TaskCard({
+  task,
+  onClick,
+  onDeleteTask,
+  columnId,
+  isCritical,
+  readinessPending,
+}: TaskCardProps) {
+  // A pending badge is neutral on purpose: the DAG Engine owns this value and
+  // has not reported one for this task yet.
+  const readinessColor = readinessPending ? "#e6dfd8" : getStatusColor(task.status, task.readiness);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,12 +109,18 @@ export function TaskCard({ task, onClick, onDeleteTask, columnId, isCritical }: 
         {task.status}
       </span>
 
-      {/* Readiness indicator */}
-      {task.readiness === "BLOCKED" && (
+      {/* Readiness indicator — held at "Calculating…" until the graph reports it */}
+      {readinessPending && (
+        <span className="absolute -right-1.5 -top-1.5 px-1.5 py-0.5 rounded bg-surface-card border border-hairline text-[10px] font-medium text-muted whitespace-nowrap">
+          Calculating…
+        </span>
+      )}
+
+      {!readinessPending && task.readiness === "BLOCKED" && (
         <span className="w-2 h-2 rounded-full bg-blocked absolute -right-1.5 -top-1.5" />
       )}
 
-      {task.readiness === "READY" && (
+      {!readinessPending && task.readiness === "READY" && (
         <span className="w-2 h-2 rounded-full bg-success absolute -right-1.5 -top-1.5" />
       )}
 

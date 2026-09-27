@@ -6,15 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Task, TaskStatus, TaskDependency, CreateTaskInput } from "@repo/types";
+import type { Task, TaskStatus, CreateTaskInput } from "@repo/types";
 
 interface CreateTaskModalProps {
   tasks: Task[];
-  dependencies: TaskDependency[];
   onClose: () => void;
   onCreateTask: (input: CreateTaskInput) => Promise<Task>;
   onLinkDependency: (prerequisiteTaskId: number, dependentTaskId: number) => Promise<void>;
-  onTasksChanged: () => Promise<void> | void;
+  onDependenciesPosted: (taskId: number) => void;
 }
 
 type LinkState = "linking" | "linked" | "failed";
@@ -38,11 +37,10 @@ function getStatusBadgeVariant(status: TaskStatus): "pill" | "in-progress" | "re
 
 export function CreateTaskModal({
   tasks,
-  dependencies,
   onClose,
   onCreateTask,
   onLinkDependency,
-  onTasksChanged,
+  onDependenciesPosted,
 }: CreateTaskModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -61,14 +59,6 @@ export function CreateTaskModal({
     if (!query) return tasks;
     return tasks.filter((task) => task.title.toLowerCase().includes(query));
   }, [tasks, search]);
-
-  const blockedByCount = useMemo(() => {
-    const counts = new Map<number, number>();
-    for (const edge of dependencies) {
-      counts.set(edge.dependentTaskId, (counts.get(edge.dependentTaskId) ?? 0) + 1);
-    }
-    return counts;
-  }, [dependencies]);
 
   const durationValue = Number.parseInt(duration, 10);
   const durationValid = Number.isFinite(durationValue) && durationValue > 0;
@@ -91,6 +81,8 @@ export function CreateTaskModal({
   };
 
   const linkPrerequisites = async (dependentId: number, prerequisiteIds: number[]) => {
+    // One request per prerequisite: a rejection on one edge leaves the task and
+    // the other edges exactly as they are, and the error lands on that chip.
     for (const prerequisiteId of prerequisiteIds) {
       setLinkStates((prev) => ({ ...prev, [prerequisiteId]: "linking" }));
       try {
@@ -130,7 +122,7 @@ export function CreateTaskModal({
         await linkPrerequisites(task.id, selectedIds);
       }
 
-      await onTasksChanged();
+      onDependenciesPosted(task.id);
     } catch (err: any) {
       setError(err?.error?.message ?? err?.message ?? "Could not create the task");
     } finally {
@@ -325,12 +317,12 @@ export function CreateTaskModal({
                           <Badge variant={getStatusBadgeVariant(task.status)} className="text-[11px] px-2 py-0.5">
                             {getStatusLabel(task.status)}
                           </Badge>
-                          <Badge variant={task.readiness === "READY" ? "ready" : "blocked"} className="text-[11px] px-2 py-0.5">
-                            {task.readiness === "READY"
-                              ? "Ready"
-                              : `Blocked by ${blockedByCount.get(task.id) ?? 0} ${
-                                  (blockedByCount.get(task.id) ?? 0) === 1 ? "task" : "tasks"
-                                }`}
+                          {/* Straight from the DAG Engine — never derived here. */}
+                          <Badge
+                            variant={task.readiness === "READY" ? "ready" : "blocked"}
+                            className="text-[11px] px-2 py-0.5"
+                          >
+                            {task.readiness === "READY" ? "Ready" : "Blocked"}
                           </Badge>
                         </label>
                       </li>
