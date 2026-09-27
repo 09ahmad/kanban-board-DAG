@@ -92,8 +92,12 @@ as a description of the current tree.
 
 ## Open work
 
-None. Every item in the audit's section 6 is either done or written down as a
+None of the audit's section 6 items. Every one is either done or written down as a
 known limitation above, checked against the code on 2026-09-27.
+
+Work that is *not* part of that audit, and is still outstanding, is tracked in
+[`REMAINING_GAPS.md`](REMAINING_GAPS.md) — principally a large block of uncommitted
+feature work on this branch that has no test coverage.
 
 Resolved since the audit list was written:
 
