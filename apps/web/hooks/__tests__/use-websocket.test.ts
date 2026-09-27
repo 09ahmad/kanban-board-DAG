@@ -1,7 +1,29 @@
 import "../../happydom";
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
-import { resolveWebSocketUrl } from "../use-websocket";
+
+/**
+ * The hook reads the signed-in user and the toaster so that a page only has to
+ * open a socket to get remote-change notifications. Both are mocked globally,
+ * which Bun makes permanent for the process — safe here only because no suite
+ * that runs after this one needs the real toaster or the real auth context.
+ * Nothing may import @/lib/api-client from this file, for the same reason.
+ */
+const toasts: { type: string; message: string }[] = [];
+mock.module("@/components/toaster", () => ({
+  useToast: () => ({
+    toasts: [],
+    toast: (t: { type: string; message: string }) => {
+      toasts.push(t);
+    },
+    remove: () => {},
+  }),
+}));
+
+let currentUserId: number | null = 5;
+mock.module("@/lib/auth-context", () => ({
+  useAuth: () => ({ user: currentUserId === null ? null : { id: currentUserId } }),
+}));
 
 /** Minimal stand-in for the browser WebSocket, driven by the test. */
 class FakeWebSocket {
@@ -55,7 +77,9 @@ class FakeWebSocket {
 
 const originalWebSocket = globalThis.WebSocket;
 
-const { useWebSocket, reconnectDelay } = await import("../use-websocket");
+// One dynamic import, after the mocks: a static import at the top would have
+// loaded the module before mock.module ran and captured the real contexts.
+const { useWebSocket, reconnectDelay, resolveWebSocketUrl } = await import("../use-websocket");
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -114,6 +138,11 @@ describe("resolveWebSocketUrl", () => {
 });
 
 describe("useWebSocket", () => {
+  beforeEach(() => {
+    toasts.length = 0;
+    currentUserId = 5;
+  });
+
   test("subscribes to the project on open", async () => {
     renderHook(() => useWebSocket(7, () => {}));
     await act(async () => {
@@ -246,5 +275,144 @@ describe("useWebSocket", () => {
     });
 
     expect(FakeWebSocket.instances).toHaveLength(opened);
+  });
+});
+
+describe("useWebSocket remote-change notifications", () => {
+  const ME = 5;
+  const SOMEONE_ELSE = 42;
+
+  async function openSocket() {
+    renderHook(() => useWebSocket(7, () => {}));
+    await act(async () => {
+      FakeWebSocket.latest().accept();
+    });
+  }
+
+  async function receive(data: Record<string, unknown>) {
+    await act(async () => {
+      FakeWebSocket.latest().onmessage?.({ data: JSON.stringify(data) });
+    });
+  }
+
+  /** The hook batches for a beat before speaking, so let that window close. */
+  async function settle() {
+    await act(async () => {
+      await wait(1300);
+    });
+  }
+
+  beforeEach(() => {
+    toasts.length = 0;
+    currentUserId = ME;
+    FakeWebSocket.reset();
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  });
+
+  test("stays quiet about the current user's own change", async () => {
+    await openSocket();
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 1,
+      actorId: ME,
+      payload: { newStatus: "REVIEW" },
+    });
+    await settle();
+
+    // The user was already told by the drag they just finished.
+    expect(toasts).toEqual([]);
+  });
+
+  test("says something about a teammate's change", async () => {
+    await openSocket();
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 1,
+      actorId: SOMEONE_ELSE,
+      payload: { newStatus: "REVIEW" },
+    });
+    await settle();
+
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]!.message).toBe("A teammate moved a task to Review");
+  });
+
+  test("collapses a burst into one line", async () => {
+    await openSocket();
+    for (const newStatus of ["IN_PROGRESS", "REVIEW", "DONE"]) {
+      await receive({
+        type: "TASK_MOVED",
+        projectId: 7,
+        taskId: 1,
+        actorId: SOMEONE_ELSE,
+        payload: { newStatus },
+      });
+    }
+    await settle();
+
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]!.message).toBe("A teammate made 3 changes");
+  });
+
+  test("counts only the other person's events in a mixed burst", async () => {
+    await openSocket();
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 1,
+      actorId: SOMEONE_ELSE,
+      payload: { newStatus: "REVIEW" },
+    });
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 2,
+      actorId: ME,
+      payload: { newStatus: "DONE" },
+    });
+    await settle();
+
+    expect(toasts).toHaveLength(1);
+    expect(toasts[0]!.message).toBe("A teammate moved a task to Review");
+  });
+
+  test("says nothing when nobody is signed in to tell apart", async () => {
+    currentUserId = null;
+    await openSocket();
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 1,
+      actorId: SOMEONE_ELSE,
+      payload: { newStatus: "REVIEW" },
+    });
+    await settle();
+
+    // With no user id every event looks like someone else's, and a board that
+    // greets an anonymous visitor for their own echo is worse than a quiet one.
+    expect(toasts).toEqual([]);
+  });
+
+  test("does not fire into a page that has gone away", async () => {
+    const { unmount } = renderHook(() => useWebSocket(7, () => {}));
+    await act(async () => {
+      FakeWebSocket.latest().accept();
+    });
+    await receive({
+      type: "TASK_MOVED",
+      projectId: 7,
+      taskId: 1,
+      actorId: SOMEONE_ELSE,
+      payload: { newStatus: "REVIEW" },
+    });
+
+    await act(async () => {
+      unmount();
+    });
+    await settle();
+
+    expect(toasts).toEqual([]);
   });
 });

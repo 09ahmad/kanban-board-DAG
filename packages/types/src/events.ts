@@ -9,6 +9,13 @@ export interface WsEventBroadcast {
   type: TaskEventType;
   projectId: number;
   taskId?: number;
+  /**
+   * Who caused it. Absent for work with no human behind it — the AI worker, and
+   * anything published outside a request. Clients use this to tell their own
+   * echo apart from a teammate's, which is the difference between a useful
+   * notification and noise about what you just did yourself.
+   */
+  actorId?: number;
   payload: Record<string, unknown>;
 }
 

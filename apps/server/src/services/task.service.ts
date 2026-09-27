@@ -24,6 +24,8 @@ type Tx = Pick<typeof prisma, "task" | "taskDependency" | "taskEvent">;
 export type PendingGraphEvent = {
   type: TaskEventType;
   taskId: number;
+  /** Whoever's mutation triggered the recompute, if it came from a request. */
+  actorId: number | undefined;
   payload: Record<string, unknown>;
 };
 
@@ -88,7 +90,7 @@ export class TaskService {
       });
       return tx.task.findUniqueOrThrow({ where: { id: task.id } });
     });
-    await this._emit("TASK_CREATED", projectId, created.id, { title: created.title });
+    await this._emit("TASK_CREATED", projectId, created.id, { title: created.title }, userId);
     return created;
   }
 
@@ -141,7 +143,7 @@ export class TaskService {
       });
       return tx.task.findUniqueOrThrow({ where: { id: taskId } });
     });
-    await this._emit("TASK_UPDATED", existing.projectId, taskId, dto as Record<string, unknown>);
+    await this._emit("TASK_UPDATED", existing.projectId, taskId, dto as Record<string, unknown>, userId);
     await this._emitPending(existing.projectId, pending);
     return updated;
   }
@@ -173,10 +175,13 @@ export class TaskService {
       });
       return tx.task.findUniqueOrThrow({ where: { id: taskId } });
     });
-    await this._emit("TASK_MOVED", task.projectId, taskId, {
-      oldStatus: task.status,
-      newStatus: dto.status,
-    });
+    await this._emit(
+      "TASK_MOVED",
+      task.projectId,
+      taskId,
+      { oldStatus: task.status, newStatus: dto.status },
+      userId,
+    );
     await this._emitPending(task.projectId, pending);
     return moved;
   }
@@ -207,7 +212,7 @@ export class TaskService {
         },
       });
     });
-    await this._emit("TASK_DELETED", task.projectId, taskId, { taskId });
+    await this._emit("TASK_DELETED", task.projectId, taskId, { taskId }, userId);
     await this._emitPending(task.projectId, pending);
   }
 
@@ -307,7 +312,7 @@ export class TaskService {
             payload: {},
           },
         });
-        pending.push({ type: "TASK_BLOCKED", taskId: task.id, payload: {} });
+        pending.push({ type: "TASK_BLOCKED", taskId: task.id, actorId, payload: {} });
       }
       if (readyChanged && nextReady === "READY") {
         await tx.taskEvent.create({
@@ -319,7 +324,7 @@ export class TaskService {
             payload: {},
           },
         });
-        pending.push({ type: "TASK_READY", taskId: task.id, payload: {} });
+        pending.push({ type: "TASK_READY", taskId: task.id, actorId, payload: {} });
       }
       if (startChanged || endChanged) {
         const payload = {
@@ -335,7 +340,7 @@ export class TaskService {
             payload,
           },
         });
-        pending.push({ type: "SCHEDULE_CHANGED", taskId: task.id, payload });
+        pending.push({ type: "SCHEDULE_CHANGED", taskId: task.id, actorId, payload });
       }
     }
     await this._persistGraphUpdates(tx, updates);
@@ -345,7 +350,7 @@ export class TaskService {
   /** Publish graph-derived events. Must only be called after the transaction commits. */
   async _emitPending(projectId: number, pending: PendingGraphEvent[]): Promise<void> {
     for (const event of pending) {
-      await this._emit(event.type, projectId, event.taskId, event.payload);
+      await this._emit(event.type, projectId, event.taskId, event.payload, event.actorId);
     }
   }
 
@@ -354,12 +359,14 @@ export class TaskService {
     projectId: number,
     taskId?: number,
     payload: Record<string, unknown> = {},
+    actorId?: number,
   ): Promise<void> {
     try {
       await publishDomainEvent({
         type,
         projectId,
         taskId,
+        actorId,
         payload,
         timestamp: new Date().toISOString(),
       });

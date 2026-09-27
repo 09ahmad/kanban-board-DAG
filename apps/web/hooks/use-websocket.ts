@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { TaskEventType } from "@repo/types";
+import type { TaskEventType, WsEventBroadcast } from "@repo/types";
+import { summariseRemoteEvents } from "@/lib/remote-activity";
+import { useToast } from "@/components/toaster";
+import { useAuth } from "@/lib/auth-context";
 
-interface WSEvent {
-  type: TaskEventType;
-  projectId: number;
-  taskId?: number;
-  payload: Record<string, unknown>;
-}
+interface WSEvent extends WsEventBroadcast {}
+
+/**
+ * How long remote changes are collected before speaking. Long enough that a
+ * teammate dragging a card across three columns produces one line, short enough
+ * that a single change still feels immediate.
+ */
+const REMOTE_ACTIVITY_WINDOW_MS = 1200;
 
 const MAX_RECONNECT_ATTEMPTS = 10;
 const MAX_RECONNECT_DELAY = 30000;
@@ -42,6 +47,38 @@ export function useWebSocket(
   const unmountedRef = useRef(false);
   const hasConnectedRef = useRef(false);
   const [connected, setConnected] = useState(false);
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const userId = user?.id ?? null;
+
+  // Remote activity is collected here rather than in the pages because this hook
+  // already sees every event for the project, and the two pages that use it are
+  // busy enough. If the notification ever wants its own surface, lift
+  // collectRemoteActivity into a useRemoteActivity hook and call it from the
+  // board page instead.
+  const remoteRef = useRef<WsEventBroadcast[]>([]);
+  const remoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const collectRemoteActivity = useCallback((event: WsEventBroadcast) => {
+    remoteRef.current = [...remoteRef.current, event];
+    if (remoteTimerRef.current) return;
+
+    remoteTimerRef.current = setTimeout(() => {
+      remoteTimerRef.current = null;
+      const batch = remoteRef.current;
+      remoteRef.current = [];
+
+      const message = summariseRemoteEvents(batch, userIdRef.current);
+      if (message) toastRef.current?.({ type: "info", message });
+    }, REMOTE_ACTIVITY_WINDOW_MS);
+  }, []);
+
+  // Read through refs so the socket effect never has to be rebuilt when the
+  // signed-in user changes, which would drop the connection.
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   const onEventRef = useRef(onEvent);
@@ -73,8 +110,9 @@ export function useWebSocket(
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          onEventRef.current(data as WSEvent);
+          const data = JSON.parse(event.data) as WSEvent;
+          onEventRef.current(data);
+          collectRemoteActivity(data);
         } catch {
           // ignore parse errors
         }
@@ -108,6 +146,10 @@ export function useWebSocket(
     return () => {
       unmountedRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (remoteTimerRef.current) {
+        clearTimeout(remoteTimerRef.current);
+        remoteTimerRef.current = null;
+      }
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();

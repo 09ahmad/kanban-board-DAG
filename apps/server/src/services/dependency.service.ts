@@ -73,9 +73,9 @@ export class DependencyService {
       return this._snapshot(tx, projectId);
     });
 
-    await this._emit("DEPENDENCY_ADDED", projectId, dto.dependentTaskId, dto);
+    await this._emit("DEPENDENCY_ADDED", projectId, dto.dependentTaskId, dto, userId);
     await taskService._emitPending(projectId, pending);
-    await this._emit("GRAPH_UPDATED", projectId, undefined, {});
+    await this._emit("GRAPH_UPDATED", projectId, undefined, {}, userId);
     return graph;
   }
 
@@ -105,11 +105,15 @@ export class DependencyService {
       });
       pending = await taskService._recomputeProject(tx, projectId, userId, [dep.dependentTaskId]);
     });
-    await this._emit("DEPENDENCY_REMOVED", projectId, dep.dependentTaskId, {
-      dependencyId,
-    });
+    await this._emit(
+      "DEPENDENCY_REMOVED",
+      projectId,
+      dep.dependentTaskId,
+      { dependencyId },
+      userId,
+    );
     await taskService._emitPending(projectId, pending);
-    await this._emit("GRAPH_UPDATED", projectId, undefined, {});
+    await this._emit("GRAPH_UPDATED", projectId, undefined, {}, userId);
   }
 
   async getProjectGraph(projectId: number, userId: number): Promise<GraphSnapshot> {
@@ -156,8 +160,9 @@ export class DependencyService {
     projectId: number,
     taskId?: number,
     payload: Record<string, unknown> = {},
+    actorId?: number,
   ): Promise<void> {
-    await taskService._emit(type, projectId, taskId, payload);
+    await taskService._emit(type, projectId, taskId, payload, actorId);
   }
 }
 
