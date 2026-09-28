@@ -14,7 +14,11 @@
         "dist/**"
       ]
     },
-    "lint": {},
+    "lint": {
+      "env": [
+        "NEXT_STANDALONE"
+      ]
+    },
     "check-types": {
       "dependsOn": [
         "^check-types"
