@@ -2,7 +2,12 @@
 
 > 🌐 **Live Deployed App**: [https://fe.opendraw.live/](https://fe.opendraw.live/)
 
-![TaskFlow Pro — demo walkthrough](docs/assets/demo.mp4)
+<video src="docs/assets/demo.mp4" controls="controls" muted="muted" style="max-width:100%; width:100%;">
+  <source src="docs/assets/demo.mp4" type="video/mp4">
+  Your browser does not support video playback. <a href="https://raw.githubusercontent.com/09ahmad/kanban-board-DAG/main/docs/assets/demo.mp4">Click here to watch the demo video directly</a>.
+</video>
+
+> 🎬 **Demo Video**: [Watch raw demo video walkthrough (MP4)](https://raw.githubusercontent.com/09ahmad/kanban-board-DAG/main/docs/assets/demo.mp4)
 
 A Kanban project management web app for engineering/product teams who plan work as dependency chains (e.g. integration tests can't start until backend API is done). Responsive, desktop-first but usable on tablet/mobile.
 
