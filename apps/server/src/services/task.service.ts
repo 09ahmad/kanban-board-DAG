@@ -29,11 +29,34 @@ export type PendingGraphEvent = {
   payload: Record<string, unknown>;
 };
 
+const STATUS_RANK: Record<Task["status"], number> = {
+  BACKLOG: 0,
+  IN_PROGRESS: 1,
+  REVIEW: 2,
+  DONE: 3,
+};
+
+/**
+ * A BLOCKED task may not advance along the workflow while its prerequisites
+ * are incomplete. Staying put or moving back stays open — a regressed task
+ * keeps its column and the user decides what to do next — but every move
+ * ahead of the task's current column is refused.
+ */
+function assertNotForwardMove(
+  task: { status: Task["status"]; readiness: Task["readiness"] },
+  next: Task["status"],
+): void {
+  if (task.readiness === "BLOCKED" && STATUS_RANK[next] > STATUS_RANK[task.status]) {
+    throw new BlockedTaskError();
+  }
+}
+
 
 function toGraphTask(task: {
   id: number;
   status: GraphTask["status"];
   readiness: GraphTask["readiness"];
+  position: number | null;
   plannedStart: Date | null;
   duration: number | null;
   computedStart: Date | null;
@@ -43,6 +66,7 @@ function toGraphTask(task: {
     id: task.id,
     status: task.status,
     readiness: task.readiness,
+    position: task.position ?? undefined,
     plannedStart: task.plannedStart ?? undefined,
     duration: task.duration ?? undefined,
     computedStart: task.computedStart ?? undefined,
@@ -111,6 +135,9 @@ export class TaskService {
 
   async updateTask(taskId: number, dto: UpdateTaskDto, userId: number): Promise<Task> {
     const existing = await this.getTask(taskId, userId);
+    if (dto.status !== undefined) {
+      assertNotForwardMove(existing, dto.status);
+    }
     let pending: PendingGraphEvent[] = [];
     const updated = await prisma.$transaction(async (tx) => {
       await tx.task.update({
@@ -150,9 +177,7 @@ export class TaskService {
 
   async moveTask(taskId: number, dto: MoveTaskDto, userId: number): Promise<Task> {
     const task = await this.getTask(taskId, userId);
-    if (task.readiness === "BLOCKED" && dto.status === "IN_PROGRESS") {
-      throw new BlockedTaskError();
-    }
+    assertNotForwardMove(task, dto.status);
     let pending: PendingGraphEvent[] = [];
     const moved = await prisma.$transaction(async (tx) => {
       await tx.task.update({
@@ -268,7 +293,7 @@ export class TaskService {
 
   async _persistGraphUpdates(
     tx: Tx,
-    updates: Map<number, { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date }>,
+    updates: Map<number, { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date; position?: number }>,
   ): Promise<void> {
     for (const [id, data] of updates) {
       await tx.task.update({
@@ -277,6 +302,7 @@ export class TaskService {
           readiness: data.readiness,
           computedStart: data.computedStart,
           computedEnd: data.computedEnd,
+          position: data.position,
           version: { increment: 1 },
         },
       });
@@ -309,7 +335,7 @@ export class TaskService {
     const schedule = computeSchedule(list, edges, order);
     const updates = new Map<
       number,
-      { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date }
+      { readiness?: GraphTask["readiness"]; computedStart?: Date; computedEnd?: Date; position?: number }
     >();
     const pending: PendingGraphEvent[] = [];
     for (const [id, nextReady] of readiness) {
@@ -340,6 +366,16 @@ export class TaskService {
         pending.push({ type: "TASK_BLOCKED", taskId: task.id, actorId, payload: {} });
       }
       if (readyChanged && nextReady === "READY") {
+        // Everything upstream is DONE, so the task has become actionable —
+        // surface it at the top of its column. It takes one slot above the
+        // current minimum instead of shifting its column, so no other card's
+        // stored position is rewritten.
+        const columnPeers = list.filter((t) => t.status === task.status && t.id !== task.id);
+        const top = columnPeers.length > 0
+          ? Math.min(...columnPeers.map((t) => t.position ?? 0)) - 1
+          : 0;
+        const update = updates.get(id);
+        if (update) update.position = top;
         await tx.taskEvent.create({
           data: {
             projectId,

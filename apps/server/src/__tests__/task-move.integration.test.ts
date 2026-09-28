@@ -128,4 +128,163 @@ describe("task move integration", () => {
     const moveBody = (await moveRes.json()) as { error: { code: string } };
     expect(moveBody.error.code).toBe("TASK_IS_BLOCKED");
   });
+
+  /** A not DONE, B blocked behind it: every forward move must be refused. */
+  async function createBlockedPair(): Promise<{ taskAId: number; taskBId: number }> {
+    const taskARes = await request(`/api/v1/projects/${projectId}/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ title: "Prereq Task", status: "IN_PROGRESS" }),
+    });
+    const aBody = (await taskARes.json()) as { data: { id: number } };
+
+    const taskBRes = await request(`/api/v1/projects/${projectId}/tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ title: "Dependent Task" }),
+    });
+    const bBody = (await taskBRes.json()) as { data: { id: number } };
+
+    await request(`/api/v1/projects/${projectId}/dependencies`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        prerequisiteTaskId: aBody.data.id,
+        dependentTaskId: bBody.data.id,
+      }),
+    });
+
+    return { taskAId: aBody.data.id, taskBId: bBody.data.id };
+  }
+
+  async function moveTask(taskId: number, status: string): Promise<Response> {
+    return request(`/api/v1/tasks/${taskId}/move`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  test("BLOCKED task cannot move forward to REVIEW", async () => {
+    const { taskBId } = await createBlockedPair();
+    const res = await moveTask(taskBId, "REVIEW");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("TASK_IS_BLOCKED");
+  });
+
+  test("BLOCKED task cannot move forward to DONE", async () => {
+    const { taskBId } = await createBlockedPair();
+    const res = await moveTask(taskBId, "DONE");
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("TASK_IS_BLOCKED");
+  });
+
+  test("PATCH /tasks/:id cannot move a BLOCKED task forward either", async () => {
+    const { taskBId } = await createBlockedPair();
+    const res = await request(`/api/v1/tasks/${taskBId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: "DONE" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("TASK_IS_BLOCKED");
+  });
+
+  test("BLOCKED task can still move back", async () => {
+    const { taskAId, taskBId } = await createBlockedPair();
+
+    // Finish A, then B (READY) moves forward to REVIEW.
+    const doneRes = await moveTask(taskAId, "DONE");
+    expect(doneRes.status).toBe(200);
+    const forwardRes = await moveTask(taskBId, "REVIEW");
+    expect(forwardRes.status).toBe(200);
+
+    // Regression: A moves back to IN_PROGRESS. B becomes BLOCKED but keeps
+    // its REVIEW column.
+    const regressRes = await moveTask(taskAId, "IN_PROGRESS");
+    expect(regressRes.status).toBe(200);
+    const bAfter = await request(`/api/v1/tasks/${taskBId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const bBody = (await bAfter.json()) as { data: { readiness: string; status: string } };
+    expect(bBody.data.readiness).toBe("BLOCKED");
+    expect(bBody.data.status).toBe("REVIEW");
+
+    // Moving back stays open: B returns to BACKLOG.
+    const backRes = await moveTask(taskBId, "BACKLOG");
+    expect(backRes.status).toBe(200);
+    const bFinal = await request(`/api/v1/tasks/${taskBId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const bFinalBody = (await bFinal.json()) as { data: { status: string } };
+    expect(bFinalBody.data.status).toBe("BACKLOG");
+  });
+
+  test("a task that becomes READY jumps to the top of its column", async () => {
+    // Fresh project so the column's positions are fully controlled.
+    const projRes = await request("/api/v1/projects", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: "Ready Top Test Project" }),
+    });
+    const projBody = (await projRes.json()) as { data: { id: number } };
+    const pid = projBody.data.id;
+
+    async function createInProject(body: Record<string, unknown>): Promise<number> {
+      const res = await request(`/api/v1/projects/${pid}/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const parsed = (await res.json()) as { data: { id: number } };
+      return parsed.data.id;
+    }
+
+    // Two backlog tasks deep in the column, and a gate holding the first back.
+    const firstId = await createInProject({ title: "First", position: 10 });
+    const secondId = await createInProject({ title: "Second", position: 20 });
+    const gateId = await createInProject({ title: "Gate", status: "IN_PROGRESS" });
+    await request(`/api/v1/projects/${pid}/dependencies`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ prerequisiteTaskId: gateId, dependentTaskId: firstId }),
+    });
+
+    const gateDone = await moveTask(gateId, "DONE");
+    expect(gateDone.status).toBe(200);
+
+    const firstAfter = await request(`/api/v1/tasks/${firstId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const firstBody = (await firstAfter.json()) as { data: { readiness: string; position: number } };
+    expect(firstBody.data.readiness).toBe("READY");
+    expect(firstBody.data.position).toBeLessThan(20);
+  });
 });

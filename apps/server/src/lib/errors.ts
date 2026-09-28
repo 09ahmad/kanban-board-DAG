@@ -52,7 +52,7 @@ export class SelfDependencyError extends AppError {
 }
 
 export class BlockedTaskError extends AppError {
-  constructor(message = "A blocked task cannot be moved to IN_PROGRESS.") {
+  constructor(message = "A blocked task cannot be moved forward while its prerequisites are incomplete.") {
     super("TASK_IS_BLOCKED", message, 400);
   }
 }
