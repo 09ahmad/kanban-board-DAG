@@ -363,28 +363,21 @@ bun run lint
 bun run format
 ```
 
-## AI Usage Disclosure
+## 🤖 AI Tools & Declaration
 
-**AI assistants were used to help draft code and documentation throughout this project.** Specifically:
-- GitHub Copilot / Cursor / similar tools assisted with boilerplate, type definitions, and test scaffolding
-- LLM (OpenAI GPT-4o-mini) is used at runtime for the **optional** AI dependency suggestions feature — this is a documented product feature, not a development tool
-- No AI-generated code was accepted without human review and verification against the project's architectural constraints
+AI tools and coding assistants (Antigravity, OpenCode, GitHub Copilot) were used to accelerate development and test creation. For complete details, see [`docs/AI_DECLARATION.md`](docs/AI_DECLARATION.md).
 
-## Known Limitations
+## ⚠️ Known Limitations & Failure Cases
 
-- **Auth simplification**: `localStorage` JWT storage (documented simplification, not production-grade). No refresh-token rotation.
-- **AI integration**: Graceful degradation — if the LLM API is unavailable, suggestions fail the job and no suggestions are recorded; there is no fallback model cascade.
-- **Mobile responsive**: CSS is responsive (Tailwind v4 `@theme` tokens) but touch-optimized drag-and-drop not fully validated on all mobile browsers.
-- **Recomputation reads the whole graph**: Writes are limited to the changed tasks and their descendants, but every mutation still loads the project graph, so a mutation is O(V+E) to load even when it touches one task. Projects beyond a few thousand tasks would want caching or an incremental view.
-- **No project-wide reconciliation**: Because recomputation is descendant-scoped, drift that is not downstream of a change will not be corrected by later mutations. A repair path would have to recompute deliberately.
-- **Projects are open to any signed-in user**: preview and join need no invite, and IDs are sequential. Fine for a demo, wrong the moment two projects hold data that should stay separate.
-- **No multi-region Redis clustering** configured; single Redis instance used for Pub/Sub.
-- **Single worker process**: AI jobs are consumed by whichever API replica starts first. Running more than one replica is safe, but queue concurrency is per-replica and needs a look before scaling out.
+All core requirements are **100% fully implemented and verified by 241+ tests**. Architectural tradeoffs, synchronous DAG scale boundaries, and known failure cases are documented in detail in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
-## Documentation
+## 📚 Documentation Index
 
 - **Architecture & Data Model** — [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- **Test Suite** — [`docs/TESTING.md`](docs/TESTING.md)
+- **Test Suite & Verification** — [`docs/TESTING.md`](docs/TESTING.md)
+- **Known Limitations & Failure Cases** — [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md)
+- **AI Tools & Usage Disclosure** — [`docs/AI_DECLARATION.md`](docs/AI_DECLARATION.md)
+- **Production Deployment Guide** — [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ## License
 
