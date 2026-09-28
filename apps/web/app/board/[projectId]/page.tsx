@@ -282,7 +282,7 @@ export default function BoardPage({ params }: { params: Promise<{ projectId: str
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-[32px] text-ink">Kanban Board</h1>
-            <p className="text-body text-[16px]">Drag tasks between columns. Blocked tasks cannot enter In Progress.</p>
+            <p className="text-body text-[16px]">Drag tasks between columns. Blocked tasks cannot move forward until their prerequisites are done.</p>
           </div>
           <div className="flex items-center gap-3">
             <MembersAvatarRow projectId={projectId} members={members} />

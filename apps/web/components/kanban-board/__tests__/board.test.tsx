@@ -154,9 +154,54 @@ describe("drop resolution", () => {
     expect(resolveDrop(1, "IN_PROGRESS", blocked)).toEqual({ kind: "blocked" });
   });
 
-  test("a BLOCKED card may still be moved to a column that does not start work", () => {
+  test("a BLOCKED card may not be dropped forward into REVIEW either", () => {
     const blocked = withTasks({ BACKLOG: [makeTask(1, "BACKLOG", 0, "BLOCKED")] });
-    expect(resolveDrop(1, "REVIEW", blocked).kind).toBe("move");
+    expect(resolveDrop(1, "REVIEW", blocked)).toEqual({ kind: "blocked" });
+  });
+
+  test("a BLOCKED card may not be dropped forward into DONE", () => {
+    const blocked = withTasks({ BACKLOG: [makeTask(1, "BACKLOG", 0, "BLOCKED")] });
+    expect(resolveDrop(1, "DONE", blocked)).toEqual({ kind: "blocked" });
+  });
+
+  test("a BLOCKED card dropped onto a card in a column ahead is refused", () => {
+    const blocked = withTasks({
+      BACKLOG: [makeTask(1, "BACKLOG", 0, "BLOCKED")],
+      REVIEW: [makeTask(8, "REVIEW", 0)],
+    });
+    expect(resolveDrop(1, 8, blocked)).toEqual({ kind: "blocked" });
+  });
+
+  test("a BLOCKED card can still move back to a lower column", () => {
+    // A regressed task keeps its REVIEW column; moving back stays open.
+    const regressed: TestColumn[] = [
+      { id: "BACKLOG", tasks: [] },
+      { id: "IN_PROGRESS", tasks: [] },
+      { id: "REVIEW", tasks: [makeTask(1, "REVIEW", 0, "BLOCKED")] },
+      { id: "DONE", tasks: [] },
+    ];
+    expect(resolveDrop(1, "BACKLOG", regressed)).toEqual({
+      kind: "move",
+      taskId: 1,
+      status: "BACKLOG",
+      position: 0,
+    });
+  });
+
+  test("a card dropped on a card in another column becomes a move before that card", () => {
+    const target = withTasks({ REVIEW: [makeTask(8, "REVIEW", 0), makeTask(9, "REVIEW", 1)] });
+    expect(resolveDrop(1, 8, target)).toEqual({
+      kind: "move",
+      taskId: 1,
+      status: "REVIEW",
+      position: 0,
+    });
+    expect(resolveDrop(1, 9, target)).toEqual({
+      kind: "move",
+      taskId: 1,
+      status: "REVIEW",
+      position: 1,
+    });
   });
 
   test("a BLOCKED card dropped on its own column is not refused", () => {

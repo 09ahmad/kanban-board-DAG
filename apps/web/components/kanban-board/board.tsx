@@ -8,6 +8,8 @@ import {
   useSensor,
   useSensors,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
@@ -18,6 +20,30 @@ import { TaskStatus } from "@repo/types";
 import { KanbanColumn } from "@/components/kanban-board/board-column";
 import { TaskCard } from "@/components/kanban-board/task-card";
 import { useToast } from "@/components/toaster";
+
+const STATUS_RANK: Record<TaskStatus, number> = {
+  BACKLOG: 0,
+  IN_PROGRESS: 1,
+  REVIEW: 2,
+  DONE: 3,
+};
+
+/**
+ * A drop should mean the same thing anywhere over a column's box, not only
+ * where a card or the column's centre happens to sit. pointerWithin answers
+ * "which column is the pointer inside of" and wins whenever it has an answer;
+ * closestCenter stays as the fallback so keyboard drags — which have no
+ * pointer — still resolve to a target.
+ */
+const columnFirstCollision: CollisionDetection = (args) => {
+  const columnCollisions = pointerWithin(args).filter((collision) =>
+    args.droppableContainers.some(
+      (container) => container.id === collision.id && container.data.current?.type === "column"
+    )
+  );
+  if (columnCollisions.length > 0) return columnCollisions;
+  return closestCenter(args);
+};
 
 interface KanbanBoardProps {
   columns: Array<{ id: TaskStatus; title: string; tasks: Task[] }>;
@@ -57,40 +83,51 @@ export function resolveDrop(taskId: number, overId: string | number, columns: Bo
 
   const targetStatus = Object.values(TaskStatus).find((s) => s === overId);
 
+  let status: TaskStatus;
+  let position: number;
+
   if (targetStatus) {
     // Dropping back into the card's own column is not a move.
     if (dragged.status === targetStatus) return { kind: "none" };
+    status = targetStatus;
+    position = columns.find((c) => c.id === targetStatus)?.tasks.length ?? 0;
+  } else {
+    const overTaskId = Number(overId);
+    if (!Number.isInteger(overTaskId)) return { kind: "none" };
 
-    // A BLOCKED task may not enter IN_PROGRESS. Refusing here keeps the
-    // dependency rule legible on the board instead of surfacing as a server
-    // rejection after the card has already travelled there.
-    if (dragged.readiness === "BLOCKED" && targetStatus === "IN_PROGRESS") {
-      return { kind: "blocked" };
+    const overTask = allTasks.find((t) => t.id === overTaskId);
+    if (!overTask) return { kind: "none" };
+
+    if (overTask.status === dragged.status) {
+      const column = columns.find((c) => c.id === dragged.status);
+      if (!column) return { kind: "none" };
+
+      const activeIndex = column.tasks.findIndex((t) => t.id === taskId);
+      const overIndex = column.tasks.findIndex((t) => t.id === overTaskId);
+      if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return { kind: "none" };
+
+      return { kind: "reorder", taskId, position: overIndex, status: dragged.status };
     }
 
-    const column = columns.find((c) => c.id === targetStatus);
-    return {
-      kind: "move",
-      taskId,
-      status: targetStatus,
-      position: column?.tasks.length ?? 0,
-    };
+    // Dropping onto a card in another column is a move into that column, so a
+    // drop lands anywhere over the target box — over a card or over empty
+    // space alike — instead of only where the column droppable is closest.
+    // The card's own index decides where the move lands, matching the drop
+    // point; the position tiebreak stays with the server and the id sort.
+    status = overTask.status;
+    position = columns.find((c) => c.id === overTask.status)?.tasks.findIndex((t) => t.id === overTaskId) ?? 0;
+    if (position === -1) position = 0;
   }
 
-  const overTaskId = Number(overId);
-  if (!Number.isInteger(overTaskId)) return { kind: "none" };
+  // A BLOCKED task may not move ahead of its current column while its
+  // prerequisites are incomplete. Refusing here keeps the dependency rule
+  // legible on the board instead of surfacing as a server rejection after the
+  // card has already travelled there. Moving back stays open.
+  if (dragged.readiness === "BLOCKED" && STATUS_RANK[status] > STATUS_RANK[dragged.status]) {
+    return { kind: "blocked" };
+  }
 
-  const overTask = allTasks.find((t) => t.id === overTaskId);
-  if (!overTask || overTask.status !== dragged.status) return { kind: "none" };
-
-  const column = columns.find((c) => c.id === dragged.status);
-  if (!column) return { kind: "none" };
-
-  const activeIndex = column.tasks.findIndex((t) => t.id === taskId);
-  const overIndex = column.tasks.findIndex((t) => t.id === overTaskId);
-  if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) return { kind: "none" };
-
-  return { kind: "reorder", taskId, position: overIndex, status: dragged.status };
+  return { kind: "move", taskId, status, position };
 }
 
 interface DropDeps {
@@ -110,7 +147,7 @@ export async function performDrop(action: DropAction, deps: DropDeps): Promise<v
   if (action.kind === "blocked") {
     deps.toast({
       type: "error",
-      message: "This task is blocked — finish its prerequisites before starting it.",
+      message: "This task is blocked — finish its prerequisites before moving it forward.",
     });
     return;
   }
@@ -179,7 +216,7 @@ export function KanbanBoard({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={columnFirstCollision}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
