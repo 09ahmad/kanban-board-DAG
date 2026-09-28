@@ -47,5 +47,8 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "kanban-board": "."
+  }
 }

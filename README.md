@@ -1,8 +1,14 @@
 # TaskFlow Pro
 
+> 🌐 **Live Deployed App**: [https://fe.opendraw.live/](https://fe.opendraw.live/)
+
 ![TaskFlow Pro — demo walkthrough](docs/assets/demo.mp4)
 
 A Kanban project management web app for engineering/product teams who plan work as dependency chains (e.g. integration tests can't start until backend API is done). Responsive, desktop-first but usable on tablet/mobile.
+
+## 🚀 Live Demo
+
+Access the deployed production application live at: **[https://fe.opendraw.live/](https://fe.opendraw.live/)**
 
 ## Problem Statement
 
@@ -91,6 +97,11 @@ Pure TypeScript DAG engine with zero I/O:
 ### Option 1: Docker (Production-like)
 
 ```bash
+# 0. Install dependencies (required before docker build: the Dockerfiles COPY
+#    the host's node_modules — bun's registry operations stall inside Docker
+#    build containers)
+bun install
+
 # 1. Configure environment
 cp .env.production.example .env
 # Edit .env: set JWT_SECRET, POSTGRES_PASSWORD, etc.
